@@ -39,13 +39,6 @@ class StudioRuntimeController:
         if hasattr(target, "setText"):
             target.setText(text)
 
-    def _set_text_block(self, attr_name: str, text: str) -> None:
-        target = getattr(self.window, attr_name, None)
-        if target is None:
-            return
-        if hasattr(target, "setPlainText"):
-            target.setPlainText(text)
-
     def _annotation_state(self):
         tool = getattr(self.window, "annotation_tool", None)
         if tool is None or not hasattr(tool, "export_state"):
