@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from PIL import Image
+
+from app.core import AnnotationBox, AnnotationState, ScanResultRecord
+from app.services.annotation_service import AnnotationService
+from app.services.dataset_service import DatasetService
+from app.services.inference_service import InferenceService
+
+
+class DummyInferenceManager:
+    def load_images(self, images):
+        self.images = list(images)
+
+    def run_inference(self, yolo_model, resnet_model, output_dir, classes_yaml=""):
+        self.last_call = (yolo_model, resnet_model, output_dir, classes_yaml)
+
+
+def _make_image(path: Path, size: tuple[int, int] = (120, 120)) -> str:
+    Image.new("RGB", size, "white").save(path)
+    return str(path)
+
+
+def test_file_pipeline_annotation_round_trip_and_dataset_outputs(tmp_path: Path):
+    image_path = _make_image(tmp_path / "sample.png")
+    annotation_service = AnnotationService()
+    dataset_service = DatasetService()
+    state = AnnotationState(
+        images=[image_path],
+        annotations={
+            image_path: [
+                AnnotationBox(cls=0, x=0.5, y=0.5, w=0.4, h=0.4),
+            ]
+        },
+        class_names=["atom"],
+        current_index=0,
+    )
+
+    saved_dir = tmp_path / "saved"
+    output_dir, used_class_names = annotation_service.save_annotations(state, str(saved_dir))
+    assert output_dir == saved_dir
+    assert used_class_names == ["atom"]
+    assert (saved_dir / "sample.txt").exists()
+    assert (saved_dir / "classes.yaml").exists()
+
+    loaded_state = annotation_service.load_annotation_files(
+        annotation_service.create_state([image_path], class_names=["atom"]),
+        [str(saved_dir / "sample.txt")],
+    )
+    assert len(loaded_state.annotations[image_path]) == 1
+    assert loaded_state.annotations[image_path][0].to_tuple() == (0, 0.5, 0.5, 0.4, 0.4)
+
+    images_dir = tmp_path / "yolo" / "images" / "train"
+    labels_dir = tmp_path / "yolo" / "labels" / "train"
+    dataset_service.write_yolo_split(
+        loaded_state,
+        lambda path: path,
+        [image_path],
+        str(images_dir),
+        str(labels_dir),
+    )
+    assert (images_dir / "sample.png").exists()
+    assert (labels_dir / "sample.txt").read_text(encoding="utf-8").strip() == "0 0.5 0.5 0.4 0.4"
+
+    crop_summary = dataset_service.crop_resnet_dataset(
+        loaded_state,
+        lambda path: path,
+        str(tmp_path / "resnet"),
+        {0: "atom"},
+    )
+    assert crop_summary.crop_count == 1
+    assert crop_summary.actual_classes == {"atom"}
+    crop_files = list((tmp_path / "resnet" / "atom").glob("crop_*.jpg"))
+    assert len(crop_files) == 1
+
+
+def test_file_pipeline_scan_result_selection_uses_real_png_path(tmp_path: Path):
+    image_path = _make_image(tmp_path / "scan_output.png")
+    inference_service = InferenceService(DummyInferenceManager())
+    scan_result = ScanResultRecord(
+        label="scan",
+        saved=[{"png": image_path}, {"png": ""}, {}],
+    )
+
+    files = inference_service.scan_result_files(scan_result)
+
+    assert files == [image_path]

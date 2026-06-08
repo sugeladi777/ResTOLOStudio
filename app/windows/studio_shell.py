@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from pathlib import Path
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -16,19 +18,12 @@ from PyQt5.QtWidgets import (
 )
 
 from app.core import AppPaths
-from app.legacy.workbench_ui import (
-    BASE_COLOR,
-    BORDER_COLOR,
-    DARK_BG,
-    MUTED_COLOR,
-    PANEL_BG,
-    TEXT_COLOR,
-)
 from app.ui.annotation_tool import AnnotationTool
 from app.utils.error_matcher import ErrorMatcher
 from app.utils.inference_manager import InferenceManager
 from app.utils.model_manager import ModelManager
 from app.utils.training_manager import TrainingManager
+from app.windows.studio_ui import BASE_COLOR, BORDER_COLOR, DARK_BG, MUTED_COLOR, PANEL_BG, TEXT_COLOR
 
 
 def _build_annotation_tab(window):
@@ -65,17 +60,6 @@ def _build_training_classes_group(window):
                 border: 1px solid {BORDER_COLOR};
                 border-radius: 6px;
                 background-color: {DARK_BG};
-            }}
-            QScrollBar:horizontal {{
-                background-color: {DARK_BG};
-                height: 10px;
-                border-radius: 5px;
-                margin: 0px;
-            }}
-            QScrollBar::handle:horizontal {{
-                background-color: {BORDER_COLOR};
-                border-radius: 5px;
-                min-width: 30px;
             }}
         """
     )
@@ -138,7 +122,6 @@ def _build_training_tab(window):
 
     epochs_layout = QHBoxLayout()
     epochs_label = window.create_label("Epochs:")
-    epochs_label.setToolTip("训练轮数，即整个训练数据集被遍历的次数。较大的值可能提高模型性能，但训练时间更长。")
     epochs_layout.addWidget(epochs_label)
     window.epochs_spin = QSpinBox()
     window.epochs_spin.setRange(1, 1000)
@@ -149,7 +132,6 @@ def _build_training_tab(window):
 
     batch_layout = QHBoxLayout()
     batch_label = window.create_label("Batch Size:")
-    batch_label.setToolTip("每次训练迭代使用的样本数量。较小的批次可以减少显存占用，但训练速度较慢。若遇到显存不足问题可以尝试减小样本数量。")
     batch_layout.addWidget(batch_label)
     window.batch_spin = QSpinBox()
     window.batch_spin.setRange(1, 128)
@@ -160,7 +142,6 @@ def _build_training_tab(window):
 
     imbalance_layout = QHBoxLayout()
     imbalance_label = window.create_label("处理类别不平衡:")
-    imbalance_label.setToolTip("启用后，系统会针对类别不平衡数据中的少数类别进行过采样，以缓解类别不平衡问题。")
     imbalance_layout.addWidget(imbalance_label)
     window.imbalance_checkbox = QCheckBox("")
     window.imbalance_checkbox.setChecked(True)
@@ -284,8 +265,8 @@ def _build_right_panel(window):
     return layout
 
 
-def initialize_workbench(window):
-    window.setWindowTitle("ReSTOLO - 分子检测与分类系统")
+def initialize_studio_shell(window):
+    window.setWindowTitle("ReSTOLO Studio")
     window.setGeometry(100, 100, 1200, 800)
 
     window.apply_styles()
@@ -344,3 +325,18 @@ def initialize_workbench(window):
 
     window.annotation_tool.annotation_updated.connect(window.on_annotation_updated)
     window.on_tab_changed(0)
+
+
+class StudioShellSignalsMixin:
+    training_finished_signal = pyqtSignal()
+    training_error_signal = pyqtSignal(str)
+    log_signal = pyqtSignal(str)
+    training_progress_signal = pyqtSignal(int, int)
+    resnet_loss_signal = pyqtSignal(int, float, float)
+
+    def log(self, message):
+        self.log_signal.emit(message)
+
+    def _log_slot(self, message):
+        if hasattr(self, "log_text"):
+            self.log_text.append(message)

@@ -4,7 +4,8 @@ from PyQt5.QtCore import Qt, pyqtSignal, QPoint
 import cv2
 import numpy as np
 import os
-from pathlib import Path
+
+from app.core import AnnotationBox, AnnotationState
 
 BASE_COLOR = "#5AE54A"
 HIGHLIGHT_COLOR = "#D3FF9E"
@@ -247,6 +248,51 @@ class AnnotationTool(QWidget):
         self.pan_offset_x = 0
         self.pan_offset_y = 0
 
+    def load_state(self, state: AnnotationState):
+        normalized = state.normalized()
+        self.images = list(normalized.images)
+        self.current_index = normalized.current_index
+        self.annotations = {
+            image_path: [box.to_tuple() for box in normalized.annotations.get(image_path, [])]
+            for image_path in normalized.images
+        }
+        for image_path, boxes in normalized.annotations.items():
+            if image_path not in self.annotations:
+                self.annotations[image_path] = [box.to_tuple() for box in boxes]
+
+        self.class_names = list(normalized.class_names)
+        while len(self.class_buttons) < len(self.class_names):
+            self.add_new_class()
+        while len(self.class_buttons) > len(self.class_names):
+            self.remove_last_class()
+
+        for index, button in enumerate(self.class_buttons):
+            button.setText(self.class_names[index] if index < len(self.class_names) else str(index))
+
+        if self.current_class >= len(self.class_buttons):
+            self.current_class = max(0, len(self.class_buttons) - 1)
+        if self.class_buttons:
+            self.select_class(self.current_class)
+
+        self.selected_box_index = -1
+        self.reset_view()
+        if self.images:
+            self.show_current_image()
+        else:
+            self.current_image = None
+            self.image_label.clear()
+
+    def export_state(self) -> AnnotationState:
+        return AnnotationState(
+            images=list(self.images),
+            annotations={
+                image_path: [AnnotationBox.from_tuple(box) for box in boxes]
+                for image_path, boxes in self.annotations.items()
+            },
+            class_names=list(self.class_names),
+            current_index=self.current_index,
+        ).normalized()
+
     def _connect_signals(self):
         self.prev_btn.clicked.connect(self.prev_image)
         self.next_btn.clicked.connect(self.next_image)
@@ -404,71 +450,6 @@ class AnnotationTool(QWidget):
             font_thickness,
         )
 
-    def _parse_annotation_file(self, ann_path):
-        boxes = []
-        with open(ann_path, "r", encoding="utf-8") as f:
-            for line in f:
-                parts = line.strip().split()
-                if not parts or (len(parts) >= 2 and parts[0] == "["):
-                    continue
-                if len(parts) >= 5:
-                    cls = int(parts[0])
-                    x = float(parts[1])
-                    y = float(parts[2])
-                    w = float(parts[3])
-                    h = float(parts[4])
-                    boxes.append((cls, x, y, w, h))
-        return boxes
-
-    def _match_annotation_image(self, ann_path):
-        for ext in (".jpg", ".jpeg", ".png", ".bmp"):
-            image_path = os.path.splitext(ann_path)[0] + ext
-            if image_path in self.images:
-                return image_path
-
-        base_name = os.path.basename(ann_path)
-        prefix = os.path.splitext(base_name)[0]
-        for image_path in self.images:
-            if os.path.basename(image_path).startswith(prefix):
-                return image_path
-        return None
-
-    def _ensure_output_directory(self, directory):
-        if not directory:
-            return None
-
-        output_dir = Path(directory)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        return output_dir
-
-    def _write_annotation_file(self, output_dir, image_path, boxes):
-        ann_path = output_dir / f"{Path(image_path).stem}.txt"
-        with ann_path.open("w", encoding="utf-8") as f:
-            for box in boxes:
-                if len(box) >= 5:
-                    cls, x, y, w, h = box
-                    f.write(f"{cls} {x} {y} {w} {h}\n")
-        return ann_path
-
-    def _write_classes_yaml(self, output_dir):
-        import yaml
-
-        used_classes = set()
-        for boxes in self.annotations.values():
-            for box in boxes:
-                if len(box) >= 1:
-                    used_classes.add(box[0])
-
-        used_class_names = [self.class_names[cls] for cls in sorted(used_classes)]
-        classes_path = output_dir / "classes.yaml"
-        classes_info = {
-            "names": used_class_names,
-            "nc": len(used_class_names),
-        }
-        with classes_path.open("w", encoding="utf-8") as f:
-            yaml.dump(classes_info, f, default_flow_style=False, allow_unicode=True)
-        return classes_path, used_class_names
-
     def _load_image_array(self, image_path):
         from PIL import Image
 
@@ -491,11 +472,7 @@ class AnnotationTool(QWidget):
 
     def load_images(self, image_paths):
         """加载图片"""
-        self.images = image_paths
-        self.current_index = 0
-        self.annotations = {path: [] for path in image_paths}
-        self.reset_view()
-        self.show_current_image()
+        self.load_state(AnnotationState(images=list(image_paths)))
 
     def reset_view(self):
         """重置视图到默认状态"""
@@ -505,49 +482,6 @@ class AnnotationTool(QWidget):
         self.is_panning = False
         if self.current_image is not None:
             self.draw_annotations()
-
-    def load_annotations(self, annotation_paths):
-        """加载标注文件"""
-        for ann_path in annotation_paths:
-            image_path = self._match_annotation_image(ann_path)
-            if image_path is None:
-                _debug(f"未找到匹配的图片: {ann_path}")
-                continue
-
-            _debug(f"找到匹配的图片: {image_path}")
-            boxes = self._parse_annotation_file(ann_path)
-            self.annotations[image_path] = boxes
-            _debug(f"加载了 {len(boxes)} 个标注")
-        self.show_current_image()
-
-    def save_annotations(self, directory):
-        """保存标注"""
-        try:
-            _debug(f"接收到保存标注请求，目录: {directory}")
-            output_dir = self._ensure_output_directory(directory)
-            if output_dir is None:
-                _debug("保存目录为空")
-                return
-
-            saved_count = 0
-            for image_path, boxes in self.annotations.items():
-                try:
-                    self._write_annotation_file(output_dir, image_path, boxes)
-                    saved_count += 1
-                except Exception as e:
-                    _debug(f"处理图片时出错: {e}")
-
-            try:
-                classes_yaml, used_class_names = self._write_classes_yaml(output_dir)
-                _debug(f"成功生成类别信息文件: {classes_yaml}")
-                _debug(f"实际使用的类别: {used_class_names}")
-                _debug(f"类别数: {len(used_class_names)}")
-            except Exception as e:
-                _debug(f"生成类别信息文件失败: {e}")
-
-            _debug(f"保存完成，共保存了 {saved_count} 个标注文件")
-        except Exception as e:
-            _debug(f"保存标注过程中发生错误: {e}")
 
     def show_current_image(self):
         """显示当前图片"""

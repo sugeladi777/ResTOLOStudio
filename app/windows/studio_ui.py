@@ -37,9 +37,10 @@ class RequiredButton(QPushButton):
         return QSize(hint.width() + 15, hint.height())
 
 
-class WorkbenchUiMixin:
+class StudioUiMixin:
     def apply_styles(self):
-        self.setStyleSheet(f"""
+        self.setStyleSheet(
+            f"""
             QMainWindow {{
                 background-color: {DARK_BG};
             }}
@@ -52,7 +53,6 @@ class WorkbenchUiMixin:
                 background-color: {PANEL_BG};
                 color: {TEXT_COLOR};
                 padding: 8px 20px;
-                margin-right: 0px;
                 border-top-left-radius: 5px;
                 border-top-right-radius: 5px;
                 font-weight: bold;
@@ -126,32 +126,15 @@ class WorkbenchUiMixin:
                 background-color: {HIGHLIGHT_COLOR};
                 border-color: {HIGHLIGHT_COLOR};
             }}
-            QLineEdit {{
+            QLineEdit, QSpinBox, QTextEdit {{
                 background-color: {DARK_BG};
                 color: {TEXT_COLOR};
                 border: 1px solid {BORDER_COLOR};
                 border-radius: 5px;
                 padding: 4px 10px;
             }}
-            QLineEdit:focus {{
+            QLineEdit:focus, QSpinBox:focus {{
                 border: 2px solid {BASE_COLOR};
-            }}
-            QSpinBox {{
-                background-color: {DARK_BG};
-                color: {TEXT_COLOR};
-                border: 1px solid {BORDER_COLOR};
-                border-radius: 5px;
-                padding: 5px;
-            }}
-            QSpinBox:focus {{
-                border: 2px solid {BASE_COLOR};
-            }}
-            QTextEdit {{
-                background-color: {DARK_BG};
-                color: {TEXT_COLOR};
-                border: 1px solid {BORDER_COLOR};
-                border-radius: 6px;
-                padding: 8px;
             }}
             QLabel {{
                 color: {TEXT_COLOR};
@@ -183,46 +166,6 @@ class WorkbenchUiMixin:
                 border-radius: 6px;
                 background-color: {DARK_BG};
             }}
-            QScrollBar:vertical {{
-                background-color: {DARK_BG};
-                width: 10px;
-                border-radius: 5px;
-                margin: 0px;
-            }}
-            QScrollBar::handle:vertical {{
-                background-color: {BORDER_COLOR};
-                border-radius: 5px;
-                min-height: 30px;
-            }}
-            QScrollBar::handle:vertical:hover {{
-                background-color: {MUTED_COLOR};
-            }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px;
-            }}
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-                background: none;
-            }}
-            QScrollBar:horizontal {{
-                background-color: {DARK_BG};
-                height: 10px;
-                border-radius: 5px;
-                margin: 0px;
-            }}
-            QScrollBar::handle:horizontal {{
-                background-color: {BORDER_COLOR};
-                border-radius: 5px;
-                min-width: 30px;
-            }}
-            QScrollBar::handle:horizontal:hover {{
-                background-color: {MUTED_COLOR};
-            }}
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
-                width: 0px;
-            }}
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
-                background: none;
-            }}
             QMessageBox {{
                 background-color: {PANEL_BG};
             }}
@@ -230,50 +173,20 @@ class WorkbenchUiMixin:
                 color: {TEXT_COLOR};
                 padding: 5px;
             }}
-            QMessageBox QPushButton {{
-                background-color: {PANEL_BG};
-                color: {TEXT_COLOR};
-                border: 1px solid {BORDER_COLOR};
-                border-radius: 6px;
-                padding: 8px 20px;
-                min-width: 80px;
-            }}
-            QMessageBox QPushButton:hover {{
-                background-color: {MUTED_COLOR};
-                color: {DARK_BG};
-            }}
-        """)
+            """
+        )
         app = QApplication.instance()
         if app:
-            app.setStyleSheet(f"""
+            app.setStyleSheet(
+                f"""
                 QToolTip {{
                     background-color: {PANEL_BG};
                     color: {TEXT_COLOR};
                     border: 1px solid {BORDER_COLOR};
                     padding: 4px 8px;
-                    margin: 0;
-                    white-space: normal;
                 }}
-                QMessageBox {{
-                    background-color: {PANEL_BG};
-                }}
-                QMessageBox QLabel {{
-                    color: {TEXT_COLOR};
-                    padding: 5px;
-                }}
-                QMessageBox QPushButton {{
-                    background-color: {PANEL_BG};
-                    color: {TEXT_COLOR};
-                    border: 1px solid {BORDER_COLOR};
-                    border-radius: 6px;
-                    padding: 8px 20px;
-                    min-width: 80px;
-                }}
-                QMessageBox QPushButton:hover {{
-                    background-color: {MUTED_COLOR};
-                    color: {DARK_BG};
-                }}
-            """)
+                """
+            )
 
     def create_group(self, title):
         group = QGroupBox(title)
