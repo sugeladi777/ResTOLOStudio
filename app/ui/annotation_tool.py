@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea, QPushButton, QInputDialog, QMessageBox
-from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QPalette
+from PyQt5.QtGui import QPixmap, QImage, QPalette
 from PyQt5.QtCore import Qt, pyqtSignal, QPoint
 import cv2
 import numpy as np
@@ -19,6 +19,20 @@ BORDER_COLOR = "#404040"
 def _debug(message):
     if os.environ.get("RESTOLO_DEBUG_UI") == "1":
         print(message)
+
+
+BOX_COLORS = [
+    (0, 255, 0),
+    (0, 0, 255),
+    (255, 0, 0),
+    (255, 255, 0),
+    (0, 255, 255),
+    (255, 0, 255),
+    (128, 0, 0),
+    (0, 128, 0),
+    (0, 0, 128),
+    (128, 128, 0),
+]
 
 class AnnotationTool(QWidget):
     annotation_updated = pyqtSignal()
@@ -351,6 +365,44 @@ class AnnotationTool(QWidget):
         zoom_scale_y = (h / base_height) / self.zoom_level
         return click_x * zoom_scale_x, click_y * zoom_scale_y
 
+    def _box_color(self, cls):
+        return BOX_COLORS[cls % len(BOX_COLORS)]
+
+    def _box_style(self, image_width, image_height):
+        line_width = max(1, min(int(image_width * 0.005), int(image_height * 0.005)))
+        font_scale = max(0.4, min(image_width, image_height) * 0.001)
+        font_thickness = max(1, int(min(image_width, image_height) * 0.002))
+        return line_width, font_scale, font_thickness
+
+    def _box_pixel_coords(self, box, image_width, image_height):
+        cls, x, y, width, height = box
+        x1 = max(0, int((x - width / 2) * image_width))
+        y1 = max(0, int((y - height / 2) * image_height))
+        x2 = min(image_width, int((x + width / 2) * image_width))
+        y2 = min(image_height, int((y + height / 2) * image_height))
+        return cls, x1, y1, x2, y2
+
+    def _draw_box(self, image, box, image_width, image_height, selected=False):
+        cls, x1, y1, x2, y2 = self._box_pixel_coords(box, image_width, image_height)
+        color = self._box_color(cls)
+        line_width, font_scale, font_thickness = self._box_style(image_width, image_height)
+
+        if selected:
+            cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 255), line_width + max(1, line_width // 2))
+        else:
+            cv2.rectangle(image, (x1, y1), (x2, y2), color, line_width)
+
+        class_name = self.class_names[cls] if cls < len(self.class_names) else str(cls)
+        cv2.putText(
+            image,
+            class_name,
+            (x1, max(30, y1 - 10)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            font_scale,
+            color,
+            font_thickness,
+        )
+
     def load_images(self, image_paths):
         """加载图片"""
         self.images = image_paths
@@ -556,52 +608,14 @@ class AnnotationTool(QWidget):
         image_copy = self.current_image.copy()
         h, w, _ = image_copy.shape
 
-        colors = [
-            (0, 255, 0),
-            (0, 0, 255),
-            (255, 0, 0),
-            (255, 255, 0),
-            (0, 255, 255),
-            (255, 0, 255),
-            (128, 0, 0),
-            (0, 128, 0),
-            (0, 0, 128),
-            (128, 128, 0)
-        ]
-
         if self.images and self.current_index < len(self.images):
             image_path = self.images[self.current_index]
             boxes = self.annotations.get(image_path, [])
             _debug(f"绘制标注: {len(boxes)} 个标注")
             for i, box in enumerate(boxes):
-                cls, x, y, width, height = box
-                x1 = int((x - width/2) * w)
-                y1 = int((y - height/2) * h)
-                x2 = int((x + width/2) * w)
-                y2 = int((y + height/2) * h)
-
-                x1 = max(0, x1)
-                y1 = max(0, y1)
-                x2 = min(w, x2)
-                y2 = min(h, y2)
-
+                _, x1, y1, x2, y2 = self._box_pixel_coords(box, w, h)
                 _debug(f"标注坐标: {x1},{y1} - {x2},{y2}")
-
-                color = colors[cls % len(colors)]
-
-                line_width = max(1, min(int(w * 0.005), int(h * 0.005)))
-
-                font_scale = max(0.4, min(w, h) * 0.001)
-                font_thickness = max(1, int(min(w, h) * 0.002))
-
-                if i == self.selected_box_index:
-                    cv2.rectangle(image_copy, (x1, y1), (x2, y2), (0, 255, 255), line_width + max(1, line_width // 2))
-                else:
-                    cv2.rectangle(image_copy, (x1, y1), (x2, y2), color, line_width)
-
-                class_name = self.class_names[cls] if cls < len(self.class_names) else str(cls)
-                cv2.putText(image_copy, class_name, (x1, max(30, y1-10)),
-                            cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, font_thickness)
+                self._draw_box(image_copy, box, w, h, selected=(i == self.selected_box_index))
 
         h, w, ch = image_copy.shape
         bytes_per_line = ch * w
@@ -732,54 +746,17 @@ class AnnotationTool(QWidget):
         image_copy = self.current_image.copy()
         h, w, _ = image_copy.shape
 
-        colors = [
-            (0, 255, 0),
-            (0, 0, 255),
-            (255, 0, 0),
-            (255, 255, 0),
-            (0, 255, 255),
-            (255, 0, 255),
-            (128, 0, 0),
-            (0, 128, 0),
-            (0, 0, 128),
-            (128, 128, 0)
-        ]
-
         if self.images and self.current_index < len(self.images):
             image_path = self.images[self.current_index]
             boxes = self.annotations.get(image_path, [])
             for i, box in enumerate(boxes):
-                cls, x, y, width, height = box
-                x1 = int((x - width/2) * w)
-                y1 = int((y - height/2) * h)
-                x2 = int((x + width/2) * w)
-                y2 = int((y + height/2) * h)
-
-                x1 = max(0, x1)
-                y1 = max(0, y1)
-                x2 = min(w, x2)
-                y2 = min(h, y2)
-
-                color = colors[cls % len(colors)]
-
-                line_width = max(1, min(int(w * 0.005), int(h * 0.005)))
-
-                if i == self.selected_box_index:
-                    cv2.rectangle(image_copy, (x1, y1), (x2, y2), (0, 255, 255), line_width + max(1, line_width // 2))
-                else:
-                    cv2.rectangle(image_copy, (x1, y1), (x2, y2), color, line_width)
-
-                font_scale = max(0.4, min(w, h) * 0.001)
-                font_thickness = max(1, int(min(w, h) * 0.002))
-                class_name = self.class_names[cls] if cls < len(self.class_names) else str(cls)
-                cv2.putText(image_copy, class_name, (x1, max(30, y1-10)),
-                            cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, font_thickness)
+                self._draw_box(image_copy, box, w, h, selected=(i == self.selected_box_index))
 
         if not self.start_point.isNull() and not self.end_point.isNull():
             temp_coords = self._image_coords_from_label_points(self.start_point, self.end_point)
             if temp_coords:
                 temp_x1, temp_y1, temp_x2, temp_y2 = temp_coords
-                line_width = max(1, min(int(w * 0.005), int(h * 0.005)))
+                line_width, _, _ = self._box_style(w, h)
                 cv2.rectangle(image_copy, (temp_x1, temp_y1), (temp_x2, temp_y2), (0, 0, 255), line_width)
 
         h, w, ch = image_copy.shape
