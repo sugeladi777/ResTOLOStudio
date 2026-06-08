@@ -51,6 +51,30 @@ def _prepare_training_ui(window):
     window.disable_controls()
 
 
+def _start_background_training(target):
+    train_thread = threading.Thread(target=target, daemon=True)
+    train_thread.start()
+
+
+def _split_dirs(root_dir):
+    return (
+        os.path.join(root_dir, "train"),
+        os.path.join(root_dir, "val"),
+    )
+
+
+def _run_kfold_split(window, source_dir):
+    from ml.data_divider import kfold
+
+    window.log(f"执行数据划分: {source_dir}, k=10")
+    kfold(source_dir, k=10)
+    jour = f"{time.localtime().tm_mon}{time.localtime().tm_mday}"
+    return (
+        source_dir + f"_train_{jour}_0/",
+        source_dir + f"_test_{jour}_0/",
+    )
+
+
 def _annotated_images(window):
     images = []
     for image_path in getattr(window.annotation_tool, "images", []):
@@ -220,8 +244,7 @@ def train_yolo(window):
     window.log("YOLO 训练已开始，请查看终端输出")
     _ensure_yolo_loss_dialog(window)
 
-    train_thread = threading.Thread(target=run_yolo_training, daemon=True)
-    train_thread.start()
+    _start_background_training(run_yolo_training)
 
 
 def _list_resnet_classes(resnet_data_path):
@@ -253,6 +276,12 @@ def _fallback_split_classification_dataset(source_root, train_dir, val_dir, clas
             shutil.copy(os.path.join(class_dir, image_name), os.path.join(train_dir, str(class_name), image_name))
         for image_name in val_images:
             shutil.copy(os.path.join(class_dir, image_name), os.path.join(val_dir, str(class_name), image_name))
+
+
+def _fallback_project_split(window, source_root, project_dir, class_names):
+    train_dir, val_dir = _split_dirs(project_dir)
+    _fallback_split_classification_dataset(source_root, train_dir, val_dir, class_names)
+    return train_dir + "/", val_dir + "/"
 
 
 def _prepare_resnet_from_annotations(window, project_dir):
@@ -319,21 +348,12 @@ def _prepare_resnet_from_annotations(window, project_dir):
 
     window.log(f"共裁剪了 {crop_count} 个标注区域")
     try:
-        from ml.data_divider import kfold
-
-        window.log(f"执行数据划分: {crop_dir}, k=10")
-        kfold(crop_dir, k=10)
-        jour = f"{time.localtime().tm_mon}{time.localtime().tm_mday}"
-        training_path = crop_dir + f"_train_{jour}_0/"
-        testing_path = crop_dir + f"_test_{jour}_0/"
+        training_path, testing_path = _run_kfold_split(window, crop_dir)
         window.log("数据划分完成")
         return training_path, testing_path
     except Exception as exc:  # noqa: BLE001
         window.log(f"数据划分失败，使用默认划分方式: {exc}")
-        train_dir = os.path.join(project_dir, "train")
-        val_dir = os.path.join(project_dir, "val")
-        _fallback_split_classification_dataset(crop_dir, train_dir, val_dir, sorted(actual_classes))
-        return train_dir + "/", val_dir + "/"
+        return _fallback_project_split(window, crop_dir, project_dir, sorted(actual_classes))
 
 
 def _prepare_resnet_paths(window, project_dir):
@@ -347,21 +367,10 @@ def _prepare_resnet_paths(window, project_dir):
         class_names = _list_resnet_classes(resnet_data_path)
         window.log(f"从数据目录检测到类别: {class_names}")
         try:
-            from ml.data_divider import kfold
-
-            window.log(f"执行数据划分: {resnet_data_path}, k=10")
-            kfold(resnet_data_path, k=10)
-            jour = f"{time.localtime().tm_mon}{time.localtime().tm_mday}"
-            return (
-                resnet_data_path + f"_train_{jour}_0/",
-                resnet_data_path + f"_test_{jour}_0/",
-            )
+            return _run_kfold_split(window, resnet_data_path)
         except Exception as exc:  # noqa: BLE001
             window.log(f"数据划分失败，使用默认划分方式: {exc}")
-            train_dir = os.path.join(project_dir, "train")
-            val_dir = os.path.join(project_dir, "val")
-            _fallback_split_classification_dataset(resnet_data_path, train_dir, val_dir, class_names)
-            return train_dir + "/", val_dir + "/"
+            return _fallback_project_split(window, resnet_data_path, project_dir, class_names)
 
     return _prepare_resnet_from_annotations(window, project_dir)
 
@@ -521,6 +530,5 @@ def train_resnet(window):
         finally:
             window.enable_controls()
 
-    train_thread = threading.Thread(target=run, daemon=True)
-    train_thread.start()
+    _start_background_training(run)
     window.log("ResNet 训练已开始，请查看终端输出")
