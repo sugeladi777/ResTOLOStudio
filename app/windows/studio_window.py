@@ -40,19 +40,31 @@ class ReSTOLOStudioApp(StudioActionsMixin, StudioPanelsMixin, ReSTOLOApp):
         self.reload_sessions()
 
     def _apply_default_model_paths(self):
-        yolo_model = self.runtime.paths.default_yolo_model_path
-        resnet_model = self.runtime.paths.default_resnet_model_path
+        self._set_default_model_path(
+            self.runtime.paths.default_yolo_model_path,
+            self.model_manager.load_yolo_model,
+            self.train_yolo_model_path,
+            self.infer_yolo_model_path,
+        )
+        self._set_default_model_path(
+            self.runtime.paths.default_resnet_model_path,
+            self.model_manager.load_resnet_model,
+            self.train_resnet_model_path,
+            self.infer_resnet_model_path,
+        )
+
         classes_file = self.runtime.paths.default_classes_path
-        if yolo_model.exists():
-            self.model_manager.load_yolo_model(str(yolo_model))
-            self.train_yolo_model_path.setText(str(yolo_model))
-            self.infer_yolo_model_path.setText(str(yolo_model))
-        if resnet_model.exists():
-            self.model_manager.load_resnet_model(str(resnet_model))
-            self.train_resnet_model_path.setText(str(resnet_model))
-            self.infer_resnet_model_path.setText(str(resnet_model))
         if classes_file.exists():
             self.infer_classes_path.setText(str(classes_file))
+
+    def _set_default_model_path(self, path: Path, loader, *targets) -> None:
+        if not path.exists():
+            return
+
+        resolved = str(path)
+        loader(resolved)
+        for target in targets:
+            target.setText(resolved)
 
     def load_infer_images(self):
         files, _ = QFileDialog.getOpenFileNames(
