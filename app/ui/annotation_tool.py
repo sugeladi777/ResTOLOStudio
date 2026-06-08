@@ -26,43 +26,7 @@ class AnnotationTool(QWidget):
     def __init__(self):
         super().__init__()
         self.setMinimumSize(800, 500)
-        self.setStyleSheet(f"""
-            AnnotationTool {{
-                background-color: {DARK_BG};
-            }}
-            QPushButton {{
-                background-color: {PANEL_BG};
-                color: {TEXT_COLOR};
-                border: 1px solid {BORDER_COLOR};
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
-                min-height: 28px;
-            }}
-            QPushButton:hover {{
-                background-color: {MUTED_COLOR};
-                color: {DARK_BG};
-                border-color: {BASE_COLOR};
-            }}
-            QPushButton:pressed {{
-                background-color: {DEEP_SHADE_COLOR};
-                color: {TEXT_COLOR};
-            }}
-            QPushButton:checked {{
-                background-color: {BASE_COLOR};
-                color: {DARK_BG};
-                border: 2px solid {ACCENT_COLOR};
-            }}
-            QLabel {{
-                color: {TEXT_COLOR};
-                background-color: transparent;
-            }}
-            QScrollArea {{
-                border: 1px solid {BORDER_COLOR};
-                border-radius: 6px;
-                background-color: {DARK_BG};
-            }}
-        """)
+        self._apply_styles()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -81,6 +45,11 @@ class AnnotationTool(QWidget):
         self.clear_btn.setCursor(Qt.PointingHandCursor)
         self.delete_btn.setCursor(Qt.PointingHandCursor)
         self.reset_view_btn.setCursor(Qt.PointingHandCursor)
+        self.prev_btn.setText("← 上一张")
+        self.next_btn.setText("下一张 →")
+        self.clear_btn.setText("清空标注")
+        self.delete_btn.setText("删除选中")
+        self.reset_view_btn.setText("重置视图")
         control_layout.addWidget(self.prev_btn)
         control_layout.addWidget(self.next_btn)
         control_layout.addWidget(self.clear_btn)
@@ -145,6 +114,7 @@ class AnnotationTool(QWidget):
         
         class_label = QLabel("选择类别:")
         class_label.setStyleSheet(f"color: {HIGHLIGHT_COLOR}; font-weight: bold;")
+        class_label.setText("选择类别:")
         class_layout.addWidget(class_label)
         
         self.class_buttons = []
@@ -204,9 +174,60 @@ class AnnotationTool(QWidget):
                 border-radius: 4px;
             }}
         """)
+        self.status_label.setText("就绪")
         layout.addWidget(self.status_label)
 
         # 初始化数据
+        self._initialize_state()
+
+        # 缩放和拖动相关
+
+        # 连接信号
+        self._connect_signals()
+
+        # 安装事件过滤器
+        self._install_event_filters()
+
+    def _apply_styles(self):
+        self.setStyleSheet(f"""
+            AnnotationTool {{
+                background-color: {DARK_BG};
+            }}
+            QPushButton {{
+                background-color: {PANEL_BG};
+                color: {TEXT_COLOR};
+                border: 1px solid {BORDER_COLOR};
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: bold;
+                min-height: 28px;
+            }}
+            QPushButton:hover {{
+                background-color: {MUTED_COLOR};
+                color: {DARK_BG};
+                border-color: {BASE_COLOR};
+            }}
+            QPushButton:pressed {{
+                background-color: {DEEP_SHADE_COLOR};
+                color: {TEXT_COLOR};
+            }}
+            QPushButton:checked {{
+                background-color: {BASE_COLOR};
+                color: {DARK_BG};
+                border: 2px solid {ACCENT_COLOR};
+            }}
+            QLabel {{
+                color: {TEXT_COLOR};
+                background-color: transparent;
+            }}
+            QScrollArea {{
+                border: 1px solid {BORDER_COLOR};
+                border-radius: 6px;
+                background-color: {DARK_BG};
+            }}
+        """)
+
+    def _initialize_state(self):
         self.images = []
         self.current_index = 0
         self.annotations = {}
@@ -219,7 +240,6 @@ class AnnotationTool(QWidget):
         self.selected_box_index = -1
         self.current_class = 0
 
-        # 缩放和拖动相关
         self.zoom_level = 1.0
         self.min_zoom = 0.1
         self.max_zoom = 10.0
@@ -228,14 +248,14 @@ class AnnotationTool(QWidget):
         self.pan_offset_x = 0
         self.pan_offset_y = 0
 
-        # 连接信号
+    def _connect_signals(self):
         self.prev_btn.clicked.connect(self.prev_image)
         self.next_btn.clicked.connect(self.next_image)
         self.clear_btn.clicked.connect(self.clear_annotations)
         self.delete_btn.clicked.connect(self.delete_selected_box)
         self.reset_view_btn.clicked.connect(self.reset_view)
 
-        # 安装事件过滤器
+    def _install_event_filters(self):
         self.scroll_area.installEventFilter(self)
         self.image_label.installEventFilter(self)
 
