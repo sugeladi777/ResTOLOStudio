@@ -86,7 +86,18 @@ class SessionWorkflowService:
     def result_detail(self, session: SessionRecord | None, result_index: int) -> str:
         if session is None or result_index < 0 or result_index >= len(session.scan_results):
             return ""
-        return str(session.scan_results[result_index].to_dict())
+        result = session.scan_results[result_index]
+        raw = getattr(result, "raw", {}) or {}
+        saved = getattr(result, "saved", []) or []
+        channels = raw.get("channels") or raw.get("scan_channels") or []
+        lines = [f"结果：{result.label or f'扫描结果 {result_index + 1}'}"]
+        lines.append(f"导出文件：{len(saved)}")
+        lines.append(f"通道：{', '.join(str(channel) for channel in channels) if channels else '未记录'}")
+        if saved:
+            preview_keys = [key for key in ("png", "jpg", "jpeg", "bmp") if saved[0].get(key)]
+            if preview_keys:
+                lines.append(f"可预览格式：{', '.join(preview_keys)}")
+        return "\n".join(lines)
 
     def append_scan_results(self, session_id: str, *results: dict | ScanResultRecord) -> SessionRecord:
         manifest = None

@@ -39,7 +39,9 @@ def test_session_workflow_service_manages_selection_and_labels(tmp_path: Path):
     assert "结果复查" in session_labels[0]
     assert "扫描 2 组" in session_labels[0]
     assert workflow.session_list_labels(sessions) == session_labels
-    assert "scan_b" in workflow.result_detail(sessions[0], 1)
+    detail = workflow.result_detail(sessions[0], 1)
+    assert "结果：scan_b" in detail
+    assert "导出文件：0" in detail
     assert workflow.result_detail(sessions[0], 9) == ""
 
 
