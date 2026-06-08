@@ -31,33 +31,14 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
         initialize_studio_shell(self)
         self.runtime = runtime or AppRuntime.create(PROJECT_ROOT)
         self.setWindowTitle("ReSTOLO Studio")
-        self.annotation_service = self.runtime.annotation_service
-        self.acquisition_workflow_service = self.runtime.acquisition_workflow_service
-        self.config_service = self.runtime.config_service
-        self.dataset_service = self.runtime.dataset_service
-        self.image_workflow_service = self.runtime.image_workflow_service
-        self.inference_workflow_service = self.runtime.inference_workflow_service
-        self.result_store = self.runtime.result_store
-        self.resource_loader_service = self.runtime.resource_loader_service
-        self.session_workflow_service = self.runtime.session_workflow_service
-        self.sxm_service = self.runtime.sxm_service
-        self.training_job_service = self.runtime.training_job_service
-        self.training_runner_service = self.runtime.training_runner_service
-        self.training_workflow_service = self.runtime.training_workflow_service
-        self.nanonis_service = self.runtime.nanonis_service
-        self.workflow_service = self.runtime.workflow_service
+        self._bind_runtime_services()
         self.inference_service = self.runtime.create_inference_service(self.inference_manager)
         self.current_session = self.runtime.create_startup_session("startup")
         self.pending_inference_session_id = None
         self.pending_inference_output_dir = None
         self.pending_training_context = None
         self.pending_scan_results = []
-        self.studio = StudioController(self)
-        self.training = StudioTrainingController(self)
-        self.runtime_controller = StudioRuntimeController(self)
-
-        self.service_result_signal.connect(self.studio.handle_service_result)
-        self.service_error_signal.connect(self.studio.handle_service_error)
+        self._initialize_controllers()
 
         self.studio.apply_default_model_paths()
         self._build_studio_tabs()
@@ -67,14 +48,7 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
         splitter = getattr(self, "main_splitter", None)
         if splitter is not None:
             splitter.splitterMoved.connect(self._persist_splitter_state)
-        if hasattr(self, "tab_widget"):
-            self.tab_widget.setTabText(0, "标注")
-            self.tab_widget.setTabText(1, "训练")
-            self.tab_widget.setTabText(2, "推理")
-            if self.tab_widget.count() > 3:
-                self.tab_widget.setTabText(3, "采集")
-            if self.tab_widget.count() > 4:
-                self.tab_widget.setTabText(4, "结果")
+        self._configure_tab_labels()
         self.studio.reload_sessions()
         self.update_button_states()
         if hasattr(self, "tab_widget"):
@@ -96,6 +70,42 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
         annotation_tool = getattr(self, "annotation_tool", None)
         if annotation_tool is not None and hasattr(annotation_tool, "apply_responsive_styles"):
             annotation_tool.apply_responsive_styles()
+
+    def _bind_runtime_services(self):
+        for attr_name in (
+            "annotation_service",
+            "acquisition_workflow_service",
+            "config_service",
+            "dataset_service",
+            "image_workflow_service",
+            "inference_workflow_service",
+            "result_store",
+            "resource_loader_service",
+            "session_workflow_service",
+            "sxm_service",
+            "training_job_service",
+            "training_runner_service",
+            "training_workflow_service",
+            "nanonis_service",
+            "workflow_service",
+        ):
+            setattr(self, attr_name, getattr(self.runtime, attr_name))
+
+    def _initialize_controllers(self):
+        self.studio = StudioController(self)
+        self.training = StudioTrainingController(self)
+        self.runtime_controller = StudioRuntimeController(self)
+        self.service_result_signal.connect(self.studio.handle_service_result)
+        self.service_error_signal.connect(self.studio.handle_service_error)
+
+    def _configure_tab_labels(self):
+        tab_widget = getattr(self, "tab_widget", None)
+        if tab_widget is None:
+            return
+        labels = ["标注", "训练", "推理", "采集", "结果"]
+        for index, label in enumerate(labels):
+            if tab_widget.count() > index:
+                tab_widget.setTabText(index, label)
 
     def _call_runtime_controller(self, method_name: str, *args):
         controller = getattr(self, "runtime_controller", None)
