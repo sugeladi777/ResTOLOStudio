@@ -285,7 +285,6 @@ class AnnotationTool(QWidget):
         self.images: list[str] = []
         self.current_index = 0
         self.annotations: dict[str, list[tuple[int, float, float, float, float]]] = {}
-        self.current_boxes = []
         self.is_drawing = False
         self.start_point = QPoint()
         self.end_point = QPoint()
@@ -299,8 +298,6 @@ class AnnotationTool(QWidget):
         self.max_zoom = 10.0
         self.is_panning = False
         self.last_pan_point = QPoint()
-        self.pan_offset_x = 0
-        self.pan_offset_y = 0
 
     def load_state(self, state: AnnotationState) -> None:
         normalized = state.normalized()
@@ -532,8 +529,6 @@ class AnnotationTool(QWidget):
 
     def reset_view(self) -> None:
         self.zoom_level = 1.0
-        self.pan_offset_x = 0
-        self.pan_offset_y = 0
         self.is_panning = False
         if self.current_image is not None:
             self.draw_annotations()
