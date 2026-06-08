@@ -243,6 +243,114 @@ class AnnotationTool(QWidget):
         self.scroll_area.installEventFilter(self)
         self.image_label.installEventFilter(self)
 
+    def _viewport_size(self):
+        max_width = self.scroll_area.width()
+        max_height = self.scroll_area.height()
+        if max_width <= 0:
+            max_width = 800
+        if max_height <= 0:
+            max_height = 600
+        return max_width, max_height
+
+    def _label_image_metrics(self):
+        pixmap = self.image_label.pixmap()
+        if not pixmap:
+            return None
+
+        label_width = self.image_label.width()
+        label_height = self.image_label.height()
+        if label_width == 0 or label_height == 0:
+            return None
+
+        pixmap_width = pixmap.width()
+        pixmap_height = pixmap.height()
+        offset_x = (label_width - pixmap_width) // 2
+        offset_y = (label_height - pixmap_height) // 2
+
+        return {
+            "pixmap": pixmap,
+            "pixmap_width": pixmap_width,
+            "pixmap_height": pixmap_height,
+            "offset_x": offset_x,
+            "offset_y": offset_y,
+        }
+
+    def _aspect_pixmap_size(self, image_width, image_height):
+        max_width, max_height = self._viewport_size()
+        aspect_ratio = image_width / image_height
+        if max_width / max_height > aspect_ratio:
+            base_height = max_height
+            base_width = int(base_height * aspect_ratio)
+        else:
+            base_width = max_width
+            base_height = int(base_width / aspect_ratio)
+        return base_width, base_height
+
+    def _image_coords_from_label_points(self, start_point, end_point):
+        if self.current_image is None:
+            return None
+
+        metrics = self._label_image_metrics()
+        if not metrics:
+            return None
+
+        start_x = start_point.x() - metrics["offset_x"]
+        start_y = start_point.y() - metrics["offset_y"]
+        end_x = end_point.x() - metrics["offset_x"]
+        end_y = end_point.y() - metrics["offset_y"]
+
+        if (
+            start_x < 0
+            or start_y < 0
+            or end_x > metrics["pixmap_width"]
+            or end_y > metrics["pixmap_height"]
+        ):
+            return None
+
+        h, w, _ = self.current_image.shape
+        base_width, base_height = self._aspect_pixmap_size(w, h)
+        final_width = int(base_width * self.zoom_level)
+        final_height = int(base_height * self.zoom_level)
+
+        scale_x = final_width / w
+        scale_y = final_height / h
+
+        x1 = int(min(start_x, end_x) / scale_x)
+        y1 = int(min(start_y, end_y) / scale_y)
+        x2 = int(max(start_x, end_x) / scale_x)
+        y2 = int(max(start_y, end_y) / scale_y)
+
+        return (
+            max(0, x1),
+            max(0, y1),
+            min(w, x2),
+            min(h, y2),
+        )
+
+    def _image_coords_from_label_pos(self, pos):
+        if self.current_image is None:
+            return None
+
+        metrics = self._label_image_metrics()
+        if not metrics:
+            return None
+
+        click_x = pos.x() - metrics["offset_x"]
+        click_y = pos.y() - metrics["offset_y"]
+        if (
+            click_x < 0
+            or click_y < 0
+            or click_x > metrics["pixmap_width"]
+            or click_y > metrics["pixmap_height"]
+        ):
+            return None
+
+        h, w, _ = self.current_image.shape
+        base_width, base_height = self._aspect_pixmap_size(w, h)
+        zoom_scale_x = (w / base_width) / self.zoom_level
+        zoom_scale_y = (h / base_height) / self.zoom_level
+        return click_x * zoom_scale_x, click_y * zoom_scale_y
+
     def load_images(self, image_paths):
         """加载图片"""
         self.images = image_paths
@@ -668,69 +776,18 @@ class AnnotationTool(QWidget):
                             cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, font_thickness)
 
         if not self.start_point.isNull() and not self.end_point.isNull():
-            label_width = self.image_label.width()
-            label_height = self.image_label.height()
-            pixmap = self.image_label.pixmap()
-
-            if pixmap:
-                pixmap_width = pixmap.width()
-                pixmap_height = pixmap.height()
-
-                offset_x = (label_width - pixmap_width) // 2
-                offset_y = (label_height - pixmap_height) // 2
-
-                start_x = self.start_point.x() - offset_x
-                start_y = self.start_point.y() - offset_y
-                end_x = self.end_point.x() - offset_x
-                end_y = self.end_point.y() - offset_y
-
-                if start_x >= 0 and start_y >= 0 and end_x <= pixmap_width and end_y <= pixmap_height:
-                    max_width = self.scroll_area.width()
-                    max_height = self.scroll_area.height()
-                    if max_width <= 0:
-                        max_width = 800
-                    if max_height <= 0:
-                        max_height = 600
-
-                    aspect_ratio = w / h
-                    if max_width / max_height > aspect_ratio:
-                        base_height = max_height
-                        base_width = int(base_height * aspect_ratio)
-                    else:
-                        base_width = max_width
-                        base_height = int(base_width / aspect_ratio)
-
-                    final_width = int(base_width * self.zoom_level)
-                    final_height = int(base_height * self.zoom_level)
-
-                    scale_x = final_width / w
-                    scale_y = final_height / h
-
-                    temp_x1 = int(min(start_x, end_x) / scale_x)
-                    temp_y1 = int(min(start_y, end_y) / scale_y)
-                    temp_x2 = int(max(start_x, end_x) / scale_x)
-                    temp_y2 = int(max(start_y, end_y) / scale_y)
-
-                    temp_x1 = max(0, temp_x1)
-                    temp_y1 = max(0, temp_y1)
-                    temp_x2 = min(w, temp_x2)
-                    temp_y2 = min(h, temp_y2)
-
-                    line_width = max(1, min(int(w * 0.005), int(h * 0.005)))
-                    cv2.rectangle(image_copy, (temp_x1, temp_y1), (temp_x2, temp_y2), (0, 0, 255), line_width)
+            temp_coords = self._image_coords_from_label_points(self.start_point, self.end_point)
+            if temp_coords:
+                temp_x1, temp_y1, temp_x2, temp_y2 = temp_coords
+                line_width = max(1, min(int(w * 0.005), int(h * 0.005)))
+                cv2.rectangle(image_copy, (temp_x1, temp_y1), (temp_x2, temp_y2), (0, 0, 255), line_width)
 
         h, w, ch = image_copy.shape
         bytes_per_line = ch * w
         q_image = QImage(image_copy.data, w, h, bytes_per_line, QImage.Format_RGB888)
         pixmap = QPixmap.fromImage(q_image)
 
-        max_width = self.scroll_area.width()
-        max_height = self.scroll_area.height()
-        if max_width <= 0:
-            max_width = 800
-        if max_height <= 0:
-            max_height = 600
-
+        max_width, max_height = self._viewport_size()
         aspect_ratio = w / h
         if max_width / max_height > aspect_ratio:
             base_height = max_height
@@ -843,56 +900,13 @@ class AnnotationTool(QWidget):
 
         h, w, _ = self.current_image.shape
 
-        label_width = self.image_label.width()
-        label_height = self.image_label.height()
-
-        if label_width == 0 or label_height == 0:
-            return
-
-        pixmap = self.image_label.pixmap()
-        if not pixmap:
-            return
-
-        pixmap_width = pixmap.width()
-        pixmap_height = pixmap.height()
-
-        offset_x = (label_width - pixmap_width) // 2
-        offset_y = (label_height - pixmap_height) // 2
-
-        start_x = self.start_point.x() - offset_x
-        start_y = self.start_point.y() - offset_y
-        end_x = self.end_point.x() - offset_x
-        end_y = self.end_point.y() - offset_y
-
-        if start_x < 0 or start_y < 0 or end_x > pixmap_width or end_y > pixmap_height:
+        image_coords = self._image_coords_from_label_points(self.start_point, self.end_point)
+        if image_coords is None:
             _debug("点击位置不在图片区域内")
             self.draw_annotations()
             return
 
-        max_width = self.scroll_area.width()
-        max_height = self.scroll_area.height()
-        if max_width <= 0:
-            max_width = 800
-        if max_height <= 0:
-            max_height = 600
-
-        aspect_pixmap = self.image_label.pixmap().scaled(max_width, max_height, Qt.KeepAspectRatio)
-
-        scale_x = w / aspect_pixmap.width()
-        scale_y = h / aspect_pixmap.height()
-
-        zoom_scale_x = scale_x / self.zoom_level
-        zoom_scale_y = scale_y / self.zoom_level
-
-        x1 = int(min(start_x, end_x) * zoom_scale_x)
-        y1 = int(min(start_y, end_y) * zoom_scale_y)
-        x2 = int(max(start_x, end_x) * zoom_scale_x)
-        y2 = int(max(start_y, end_y) * zoom_scale_y)
-
-        x1 = max(0, x1)
-        y1 = max(0, y1)
-        x2 = min(w, x2)
-        y2 = min(h, y2)
+        x1, y1, x2, y2 = image_coords
 
         _debug(f"原始坐标: {x1},{y1} - {x2},{y2}")
 
@@ -943,46 +957,14 @@ class AnnotationTool(QWidget):
         if not boxes:
             return False
 
-        label_width = self.image_label.width()
-        label_height = self.image_label.height()
-
-        pixmap = self.image_label.pixmap()
-        if not pixmap:
-            return False
-
-        pixmap_width = pixmap.width()
-        pixmap_height = pixmap.height()
-
-        offset_x = (label_width - pixmap_width) // 2
-        offset_y = (label_height - pixmap_height) // 2
-
-        click_x = pos.x() - offset_x
-        click_y = pos.y() - offset_y
-
-        if click_x < 0 or click_y < 0 or click_x > pixmap_width or click_y > pixmap_height:
+        image_coords = self._image_coords_from_label_pos(pos)
+        if image_coords is None:
             self.selected_box_index = -1
             self.draw_annotations()
             return False
 
+        orig_x, orig_y = image_coords
         h, w, _ = self.current_image.shape
-
-        max_width = self.scroll_area.width()
-        max_height = self.scroll_area.height()
-        if max_width <= 0:
-            max_width = 800
-        if max_height <= 0:
-            max_height = 600
-
-        aspect_pixmap = pixmap.scaled(max_width, max_height, Qt.KeepAspectRatio)
-
-        scale_x = w / aspect_pixmap.width()
-        scale_y = h / aspect_pixmap.height()
-
-        zoom_scale_x = scale_x / self.zoom_level
-        zoom_scale_y = scale_y / self.zoom_level
-
-        orig_x = click_x * zoom_scale_x
-        orig_y = click_y * zoom_scale_y
 
         for i, box in enumerate(boxes):
             cls, x, y, width, height = box
