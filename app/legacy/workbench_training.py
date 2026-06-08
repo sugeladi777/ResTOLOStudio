@@ -56,6 +56,10 @@ def _start_background_training(target):
     train_thread.start()
 
 
+def _training_parameters(window):
+    return window.epochs_spin.value(), window.batch_spin.value()
+
+
 def _split_dirs(root_dir):
     return (
         os.path.join(root_dir, "train"),
@@ -81,6 +85,33 @@ def _annotated_images(window):
         if image_path in window.annotation_tool.annotations and window.annotation_tool.annotations[image_path]:
             images.append(image_path)
     return images
+
+
+def _selected_class_indices(window):
+    if getattr(window, "class_checkboxes", None) and hasattr(window, "class_indices"):
+        selected = [
+            class_idx
+            for checkbox, class_idx in zip(window.class_checkboxes, window.class_indices)
+            if checkbox.isChecked()
+        ]
+        if selected:
+            return selected
+
+    used_classes = set()
+    for annotations in window.annotation_tool.annotations.values():
+        for cls, *_ in annotations:
+            used_classes.add(cls)
+    return sorted(used_classes)
+
+
+def _class_names_for_indices(window, class_indices):
+    class_names = []
+    for idx in class_indices:
+        if idx < len(window.annotation_tool.class_names):
+            class_names.append(window.annotation_tool.class_names[idx])
+        else:
+            class_names.append(str(idx))
+    return class_names
 
 
 def _optimal_img_size(images):
@@ -124,6 +155,67 @@ def _ensure_yolo_loss_dialog(window):
         window.loss_curve_dialog.canvas.draw_idle()
     window.loss_curve_dialog.show()
     window.loss_curve_dialog.raise_()
+
+
+def _ensure_resnet_loss_dialog(window):
+    window.loss_curve_dialog = LossCurveDialog(window, mode="resnet")
+    window.loss_curve_dialog.show()
+    window.loss_curve_dialog.raise_()
+
+
+def _set_training_project_dirs(window, project_dir):
+    window._yolo_project_dir = project_dir
+    window._resnet_project_dir = project_dir
+
+
+def _validate_yolo_annotations(window, annotated_images):
+    total_images = len(window.annotation_tool.images)
+    removed_count = total_images - len(annotated_images)
+    if removed_count > 0:
+        window.log(f"剔除了 {removed_count} 张无标注图片，保留了 {len(annotated_images)} 张有标注图片")
+    else:
+        window.log(f"全部 {total_images} 张图片都有标注")
+    if not annotated_images:
+        window.log("错误: 没有找到有标注的图片，请先补充标注")
+        return False
+    return True
+
+
+def _prepare_yolo_data(window, annotated_images):
+    temp_dir = tempfile.mkdtemp(prefix="restolo_yolo_")
+    data_yaml_path = os.path.join(temp_dir, "data.yaml")
+    train_images_dir, val_images_dir = _split_yolo_dataset(window, temp_dir, annotated_images)
+    class_names = window.annotation_tool.class_names
+    window.training_manager.generate_data_yaml(
+        train_images_dir,
+        val_images_dir,
+        len(class_names),
+        class_names,
+        data_yaml_path,
+    )
+    window.log(f"数据配置文件已生成: {data_yaml_path}")
+    window.log(f"类别数量: {len(class_names)}")
+    return data_yaml_path
+
+
+def _run_yolo_training_job(window, app_paths, yolo_model_path, data_yaml_path, epochs, batch_size, img_size, device, project_dir):
+    try:
+        window.training_manager.train_yolo(
+            weights=yolo_model_path,
+            cfg=str(app_paths.yolo_config_path),
+            data_yaml=data_yaml_path,
+            hyp=str(app_paths.yolo_hyperparameters_path),
+            epochs=epochs,
+            batch_size=batch_size,
+            img_size=img_size,
+            device=device,
+            project=project_dir,
+            name="yolo_train",
+        )
+    except Exception as exc:  # noqa: BLE001
+        error_msg = f"训练过程中出错: {exc}"
+        window.log(error_msg)
+        QMessageBox.warning(window, "训练失败", error_msg)
 
 
 def _split_yolo_dataset(window, temp_dir, annotated_images):
@@ -177,8 +269,7 @@ def train_yolo(window):
     if not _has_annotation_training_data(window):
         return
 
-    epochs = window.epochs_spin.value()
-    batch_size = window.batch_spin.value()
+    epochs, batch_size = _training_parameters(window)
     device = "0"
 
     annotated_images = _annotated_images(window)
@@ -189,32 +280,12 @@ def train_yolo(window):
     if not project_dir:
         return
 
-    window._yolo_project_dir = project_dir
-    window._resnet_project_dir = project_dir
+    _set_training_project_dirs(window, project_dir)
 
-    total_images = len(window.annotation_tool.images)
-    removed_count = total_images - len(annotated_images)
-    if removed_count > 0:
-        window.log(f"剔除了 {removed_count} 张无标注图片，保留了 {len(annotated_images)} 张有标注图片")
-    else:
-        window.log(f"全部 {total_images} 张图片都有标注")
-    if not annotated_images:
-        window.log("错误: 没有找到有标注的图片，请先补充标注")
+    if not _validate_yolo_annotations(window, annotated_images):
         return
 
-    temp_dir = tempfile.mkdtemp(prefix="restolo_yolo_")
-    data_yaml_path = os.path.join(temp_dir, "data.yaml")
-    train_images_dir, val_images_dir = _split_yolo_dataset(window, temp_dir, annotated_images)
-    class_names = window.annotation_tool.class_names
-    window.training_manager.generate_data_yaml(
-        train_images_dir,
-        val_images_dir,
-        len(class_names),
-        class_names,
-        data_yaml_path,
-    )
-    window.log(f"数据配置文件已生成: {data_yaml_path}")
-    window.log(f"类别数量: {len(class_names)}")
+    data_yaml_path = _prepare_yolo_data(window, annotated_images)
     window.log(f"训练参数: epochs={epochs}, batch_size={batch_size}, img_size={img_size}, device={device}")
 
     _prepare_training_ui(window)
@@ -222,29 +293,22 @@ def train_yolo(window):
     app_paths = _app_paths(window)
     yolo_model_path = window.train_yolo_model_path.text() or str(app_paths.default_yolo_model_path)
 
-    def run_yolo_training():
-        try:
-            window.training_manager.train_yolo(
-                weights=yolo_model_path,
-                cfg=str(app_paths.yolo_config_path),
-                data_yaml=data_yaml_path,
-                hyp=str(app_paths.yolo_hyperparameters_path),
-                epochs=epochs,
-                batch_size=batch_size,
-                img_size=img_size,
-                device=device,
-                project=project_dir,
-                name="yolo_train",
-            )
-        except Exception as exc:  # noqa: BLE001
-            error_msg = f"训练过程中出错: {exc}"
-            window.log(error_msg)
-            QMessageBox.warning(window, "训练失败", error_msg)
-
     window.log("YOLO 训练已开始，请查看终端输出")
     _ensure_yolo_loss_dialog(window)
 
-    _start_background_training(run_yolo_training)
+    _start_background_training(
+        lambda: _run_yolo_training_job(
+            window,
+            app_paths,
+            yolo_model_path,
+            data_yaml_path,
+            epochs,
+            batch_size,
+            img_size,
+            device,
+            project_dir,
+        )
+    )
 
 
 def _list_resnet_classes(resnet_data_path):
@@ -284,47 +348,47 @@ def _fallback_project_split(window, source_root, project_dir, class_names):
     return train_dir + "/", val_dir + "/"
 
 
-def _prepare_resnet_from_annotations(window, project_dir):
+def _resnet_data_path(window):
+    path_widget = getattr(window, "train_resnet_data_path", None)
+    if not path_widget:
+        return None
+    data_path = path_widget.text()
+    return data_path if data_path and os.path.exists(data_path) else None
+
+
+def _has_resnet_source(window):
+    if _resnet_data_path(window):
+        return True
+    return _has_annotation_training_data(window)
+
+
+def _prepare_resnet_crop_dir(project_dir):
     crop_dir = os.path.join(project_dir, "resnet_crop")
     os.makedirs(crop_dir, exist_ok=True)
+    return crop_dir
 
-    selected_class_indices = []
-    if getattr(window, "class_checkboxes", None) and hasattr(window, "class_indices"):
-        for checkbox, class_idx in zip(window.class_checkboxes, window.class_indices):
-            if checkbox.isChecked():
-                selected_class_indices.append(class_idx)
 
-    if not selected_class_indices:
-        used_classes = set()
-        for annotations in window.annotation_tool.annotations.values():
-            for cls, *_ in annotations:
-                used_classes.add(cls)
-        selected_class_indices = sorted(used_classes)
+def _prepare_resnet_saving_dir(project_dir):
+    saving_path = os.path.join(project_dir, "resnet_train")
+    os.makedirs(saving_path, exist_ok=True)
+    return saving_path
 
-    window.log(f"用户选择的训练类别索引: {selected_class_indices}")
 
-    class_names = []
-    for idx in selected_class_indices:
-        if idx < len(window.annotation_tool.class_names):
-            class_names.append(window.annotation_tool.class_names[idx])
-        else:
-            class_names.append(str(idx))
-    window.log(f"当前训练类别: {class_names}")
-
-    selected_class_map = {idx: name for idx, name in zip(selected_class_indices, class_names)}
-    for class_name in class_names:
+def _crop_annotation_boxes(window, crop_dir, selected_class_map):
+    for class_name in selected_class_map.values():
         os.makedirs(os.path.join(crop_dir, str(class_name)), exist_ok=True)
 
     crop_count = 0
     actual_classes = set()
     for image_path in window.annotation_tool.images:
-        if image_path not in window.annotation_tool.annotations:
+        annotations = window.annotation_tool.annotations.get(image_path)
+        if not annotations:
             continue
         try:
             gray_path = window._get_gray_path(image_path)
             with Image.open(gray_path) as img:
                 width, height = img.size
-                for cls, x, y, w, h in window.annotation_tool.annotations[image_path]:
+                for cls, x, y, w, h in annotations:
                     if cls not in selected_class_map:
                         continue
                     x1 = max(0, int((x - w / 2) * width))
@@ -341,6 +405,20 @@ def _prepare_resnet_from_annotations(window, project_dir):
                     crop_count += 1
         except Exception as exc:  # noqa: BLE001
             window.log(f"裁剪图片时出错: {exc}")
+    return crop_count, actual_classes
+
+
+def _prepare_resnet_from_annotations(window, project_dir):
+    crop_dir = _prepare_resnet_crop_dir(project_dir)
+    selected_class_indices = _selected_class_indices(window)
+
+    window.log(f"用户选择的训练类别索引: {selected_class_indices}")
+
+    class_names = _class_names_for_indices(window, selected_class_indices)
+    window.log(f"当前训练类别: {class_names}")
+
+    selected_class_map = {idx: name for idx, name in zip(selected_class_indices, class_names)}
+    crop_count, actual_classes = _crop_annotation_boxes(window, crop_dir, selected_class_map)
 
     if crop_count == 0:
         window.log("错误: 没有成功裁剪任何标注区域")
@@ -357,12 +435,8 @@ def _prepare_resnet_from_annotations(window, project_dir):
 
 
 def _prepare_resnet_paths(window, project_dir):
-    resnet_data_path = getattr(window, "train_resnet_data_path", None)
+    resnet_data_path = _resnet_data_path(window)
     if resnet_data_path:
-        resnet_data_path = resnet_data_path.text()
-    has_resnet_data = bool(resnet_data_path and os.path.exists(resnet_data_path))
-
-    if has_resnet_data:
         window.log(f"使用 ResNet 格式数据: {resnet_data_path}")
         class_names = _list_resnet_classes(resnet_data_path)
         window.log(f"从数据目录检测到类别: {class_names}")
@@ -478,22 +552,26 @@ def _run_resnet_training(window, training_path, testing_path, saving_path, epoch
         window.resnet_loss_signal.emit(resnet_last_epoch, resnet_last_loss, resnet_last_error)
 
 
+def _run_resnet_training_job(window, training_path, testing_path, saving_path, epochs, batch_size):
+    try:
+        _run_resnet_training(window, training_path, testing_path, saving_path, epochs, batch_size)
+        window.log("ResNet 模型训练完成")
+        window.training_finished_signal.emit()
+    except Exception as exc:  # noqa: BLE001
+        import traceback
+
+        error_msg = f"训练过程中出错: {exc}\n{traceback.format_exc()}"
+        window.log(error_msg)
+        window.training_error_signal.emit(str(exc))
+        QMessageBox.warning(window, "训练失败", error_msg)
+    finally:
+        window.enable_controls()
+
+
 def train_resnet(window):
     window.log("开始训练 ResNet 模型...")
-
-    resnet_data_path = getattr(window, "train_resnet_data_path", None)
-    has_resnet_data = False
-    if resnet_data_path:
-        resnet_data_path = resnet_data_path.text()
-        has_resnet_data = bool(resnet_data_path and os.path.exists(resnet_data_path))
-
-    if not has_resnet_data:
-        if not getattr(window.annotation_tool, "images", None):
-            window.log("错误: 请先加载训练图片或 ResNet 格式数据")
-            return
-        if not getattr(window.annotation_tool, "annotations", None):
-            window.log("错误: 请先加载或创建标注")
-            return
+    if not _has_resnet_source(window):
+        return
 
     project_dir = _choose_training_project_dir(window)
     if not project_dir:
@@ -504,31 +582,18 @@ def train_resnet(window):
     if not training_path or not testing_path:
         return
 
-    saving_path = os.path.join(project_dir, "resnet_train")
-    os.makedirs(saving_path, exist_ok=True)
-
     _prepare_training_ui(window)
-
-    epochs = window.epochs_spin.value()
-    batch_size = window.batch_spin.value()
-    window.loss_curve_dialog = LossCurveDialog(window, mode="resnet")
-    window.loss_curve_dialog.show()
-    window.loss_curve_dialog.raise_()
-
-    def run():
-        try:
-            _run_resnet_training(window, training_path, testing_path, saving_path, epochs, batch_size)
-            window.log("ResNet 模型训练完成")
-            window.training_finished_signal.emit()
-        except Exception as exc:  # noqa: BLE001
-            import traceback
-
-            error_msg = f"训练过程中出错: {exc}\n{traceback.format_exc()}"
-            window.log(error_msg)
-            window.training_error_signal.emit(str(exc))
-            QMessageBox.warning(window, "训练失败", error_msg)
-        finally:
-            window.enable_controls()
-
-    _start_background_training(run)
+    saving_path = _prepare_resnet_saving_dir(project_dir)
+    epochs, batch_size = _training_parameters(window)
+    _ensure_resnet_loss_dialog(window)
+    _start_background_training(
+        lambda: _run_resnet_training_job(
+            window,
+            training_path,
+            testing_path,
+            saving_path,
+            epochs,
+            batch_size,
+        )
+    )
     window.log("ResNet 训练已开始，请查看终端输出")
