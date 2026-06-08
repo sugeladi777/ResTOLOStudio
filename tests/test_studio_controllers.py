@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import QApplication
 
 from app.core import AnnotationState
 from app.ui.annotation_tool import AnnotationTool
+from app.windows.studio_window import ReSTOLOStudioApp
 from app.windows.runtime_controller import StudioRuntimeController
 from app.windows.studio_controller import StudioController
 
@@ -278,6 +279,27 @@ def test_annotation_tool_load_state_renders_pixmap_for_png(tmp_path: Path):
     assert pixmap is not None
     assert not pixmap.isNull()
     assert "sample.png" in tool.status_label.text()
+
+
+def test_studio_window_persists_and_restores_ui_sizes(tmp_path: Path):
+    app = QApplication.instance() or QApplication([])
+    runtime = __import__("app.runtime", fromlist=["AppRuntime"]).AppRuntime.create(tmp_path)
+
+    window = ReSTOLOStudioApp(runtime)
+    window.resize(1500, 900)
+    window._persist_window_geometry()
+    window._persist_splitter_state(610, 0)
+
+    assert runtime.config_service.data["ui_window_width"] == 1500
+    assert runtime.config_service.data["ui_window_height"] == 900
+    assert runtime.config_service.data["ui_left_panel_width"] == 610
+
+    other_runtime = __import__("app.runtime", fromlist=["AppRuntime"]).AppRuntime.create(tmp_path)
+    other_window = ReSTOLOStudioApp(other_runtime)
+    app.processEvents()
+
+    assert other_window.width() >= 1500
+    assert other_window.height() >= 900
 
 
 def test_studio_controller_convert_sxm_files_updates_window_state(tmp_path: Path):
