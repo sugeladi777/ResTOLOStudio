@@ -1,0 +1,25 @@
+name: restolo-py310
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - numpy=1.26.*
+  - scipy
+  - pandas
+  - matplotlib
+  - seaborn
+  - pillow
+  - pyyaml
+  - tqdm
+  - tensorboard
+  - pyqt=5.15.*
+  - opencv
+  - pytorch=2.5.*
+  - torchvision=0.20.*
+  - pytorch-cuda=12.1
+  - pip:
+      - pycocotools
+      - thop

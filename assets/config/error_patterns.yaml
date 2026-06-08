@@ -1,0 +1,76 @@
+# 错误匹配规则配置
+# 每条规则包含：
+#   name: 规则名称（标识用）
+#   pattern: 正则表达式（匹配日志中的错误信息，不区分大小写）
+#   message: 匹配成功后展示给用户的友好提示
+#   category: 错误分类（可选，如"显存"、"模型"、"数据"等）
+#   suggestion: 建议的解决方法（可选）
+#
+# 注意：规则按顺序匹配，先定义的优先级更高。
+# 修改此文件后需重启应用生效。
+
+rules:
+  # 显存相关
+  - name: cuda_oom
+    pattern: "CUDA out of memory|RuntimeError.*out of memory"
+    message: "显存不足，无法完成操作"
+    category: "显存"
+    suggestion: "尝试减小 batch_size 或降低 img_size"
+
+  - name: cuda_not_available
+    pattern: "CUDA not available|No CUDA GPUs are available"
+    message: "未检测到可用的GPU"
+    category: "显存"
+    suggestion: "请确认已正确安装NVIDIA驱动和CUDA"
+
+  # 模型相关
+  - name: model_not_found
+    pattern: "No such file.*\\.pt|FileNotFoundError.*\\.pt|No such file.*\\.pth|FileNotFoundError.*\\.pth"
+    message: "模型文件不存在"
+    category: "模型"
+    suggestion: "请检查模型文件路径是否正确"
+
+  - name: model_load_error
+    pattern: "Error.*loading.*model|load_state_dict.*error|size mismatch"
+    message: "模型加载失败"
+    category: "模型"
+    suggestion: "请确认模型文件与当前配置匹配，或重新选择模型"
+
+  - name: pretrained_model_load_failed
+    pattern: "加载预训练模型失败|Failed to load pretrained model"
+    message: "预训练模型加载失败"
+    category: "模型"
+    suggestion: "请确认预训练模型文件完整且格式正确"
+
+  # 数据相关
+  - name: no_images
+    pattern: "没有.*图片|No images|0 images|No such file.*image"
+    message: "未找到图片"
+    category: "数据"
+    suggestion: "请确认图片路径正确，且图片文件存在"
+
+  - name: no_annotations
+    pattern: "没有.*标注|No annotations|0 labels|No labels found"
+    message: "未找到标注数据"
+    category: "数据"
+    suggestion: "请先加载或创建标注文件"
+
+  # 训练相关
+  - name: nan_loss
+    pattern: "Loss is NaN|nan.*loss|loss.*nan"
+    message: "训练出现NaN损失值"
+    category: "训练"
+    suggestion: "尝试降低学习率或检查数据是否存在异常值"
+
+  # 通用
+  - name: permission_denied
+    pattern: "Permission denied|权限不足|Access denied"
+    message: "文件访问权限不足"
+    category: "通用"
+    suggestion: "请确认文件/目录的读写权限"
+
+  - name: disk_full
+    pattern: "No space left|磁盘空间不足|disk full"
+    message: "磁盘空间不足"
+    category: "通用"
+    suggestion: "请清理磁盘空间后重试"
