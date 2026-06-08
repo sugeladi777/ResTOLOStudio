@@ -31,34 +31,76 @@ class AnnotationTool(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
+        self._build_control_bar(layout)
+        self._build_class_selector(layout)
+        self._build_image_panel(layout)
+        self._build_status_bar(layout)
+        self._initialize_state()
+        self._connect_signals()
+        self._install_event_filters()
 
-        # 控制栏
-        control_layout = QHBoxLayout()
-        control_layout.setSpacing(10)
+    def _apply_styles(self):
+        self.setStyleSheet(f"""
+            AnnotationTool {{
+                background-color: {DARK_BG};
+            }}
+            QPushButton {{
+                background-color: {PANEL_BG};
+                color: {TEXT_COLOR};
+                border: 1px solid {BORDER_COLOR};
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: bold;
+                min-height: 28px;
+            }}
+            QPushButton:hover {{
+                background-color: {MUTED_COLOR};
+                color: {DARK_BG};
+                border-color: {BASE_COLOR};
+            }}
+            QPushButton:pressed {{
+                background-color: {DEEP_SHADE_COLOR};
+                color: {TEXT_COLOR};
+            }}
+            QPushButton:checked {{
+                background-color: {BASE_COLOR};
+                color: {DARK_BG};
+                border: 2px solid {ACCENT_COLOR};
+            }}
+            QLabel {{
+                color: {TEXT_COLOR};
+                background-color: transparent;
+            }}
+            QScrollArea {{
+                border: 1px solid {BORDER_COLOR};
+                border-radius: 6px;
+                background-color: {DARK_BG};
+            }}
+        """)
+
+    def _build_control_bar(self, layout):
+        self.control_layout = QHBoxLayout()
+        self.control_layout.setSpacing(10)
+
         self.prev_btn = QPushButton("← 上一张")
         self.next_btn = QPushButton("下一张 →")
         self.clear_btn = QPushButton("清空标注")
         self.delete_btn = QPushButton("删除选中")
         self.reset_view_btn = QPushButton("重置视图")
-        self.prev_btn.setCursor(Qt.PointingHandCursor)
-        self.next_btn.setCursor(Qt.PointingHandCursor)
-        self.clear_btn.setCursor(Qt.PointingHandCursor)
-        self.delete_btn.setCursor(Qt.PointingHandCursor)
-        self.reset_view_btn.setCursor(Qt.PointingHandCursor)
-        self.prev_btn.setText("← 上一张")
-        self.next_btn.setText("下一张 →")
-        self.clear_btn.setText("清空标注")
-        self.delete_btn.setText("删除选中")
-        self.reset_view_btn.setText("重置视图")
-        control_layout.addWidget(self.prev_btn)
-        control_layout.addWidget(self.next_btn)
-        control_layout.addWidget(self.clear_btn)
-        control_layout.addWidget(self.delete_btn)
-        control_layout.addWidget(self.reset_view_btn)
-        layout.addLayout(control_layout)
 
-        # 类别选择按钮
-        # 类别选择区域 - 使用ScrollArea支持水平滚动
+        for button in (
+            self.prev_btn,
+            self.next_btn,
+            self.clear_btn,
+            self.delete_btn,
+            self.reset_view_btn,
+        ):
+            button.setCursor(Qt.PointingHandCursor)
+            self.control_layout.addWidget(button)
+
+        layout.addLayout(self.control_layout)
+
+    def _build_class_selector(self, layout):
         self.class_scroll_area = QScrollArea()
         self.class_scroll_area.setWidgetResizable(True)
         self.class_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -105,18 +147,17 @@ class AnnotationTool(QWidget):
                 border: 2px solid {ACCENT_COLOR};
             }}
         """)
-        
+
         class_container = QWidget()
         class_container.setStyleSheet(f"background-color: {DARK_BG};")
-        class_layout = QHBoxLayout(class_container)
-        class_layout.setSpacing(8)
-        class_layout.setContentsMargins(5, 5, 5, 5)
-        
+        self.class_layout = QHBoxLayout(class_container)
+        self.class_layout.setSpacing(8)
+        self.class_layout.setContentsMargins(5, 5, 5, 5)
+
         class_label = QLabel("选择类别:")
         class_label.setStyleSheet(f"color: {HIGHLIGHT_COLOR}; font-weight: bold;")
-        class_label.setText("选择类别:")
-        class_layout.addWidget(class_label)
-        
+        self.class_layout.addWidget(class_label)
+
         self.class_buttons = []
         for i in range(10):
             btn = QPushButton(str(i))
@@ -125,29 +166,23 @@ class AnnotationTool(QWidget):
             btn.clicked.connect(lambda checked, cls=i: self.select_class(cls))
             btn.mouseDoubleClickEvent = lambda event, cls=i: self.edit_class_name(cls)
             btn.setCursor(Qt.PointingHandCursor)
-            class_layout.addWidget(btn)
+            self.class_layout.addWidget(btn)
             self.class_buttons.append(btn)
-        
-        # 添加"+"按钮（保存引用）
+
         self.add_btn = QPushButton("+")
         self.add_btn.setCursor(Qt.PointingHandCursor)
         self.add_btn.clicked.connect(self.add_new_class)
-        class_layout.addWidget(self.add_btn)
-        
-        # 添加"-"按钮
+        self.class_layout.addWidget(self.add_btn)
+
         self.remove_btn = QPushButton("-")
         self.remove_btn.setCursor(Qt.PointingHandCursor)
         self.remove_btn.clicked.connect(self.remove_last_class)
-        class_layout.addWidget(self.remove_btn)
-        
+        self.class_layout.addWidget(self.remove_btn)
+
         self.class_scroll_area.setWidget(class_container)
         layout.addWidget(self.class_scroll_area)
 
-        # 保存控件引用
-        self.control_layout = control_layout
-        self.class_layout = class_layout
-
-        # 图像显示区域 - 使用 ScrollArea
+    def _build_image_panel(self, layout):
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(False)
         self.scroll_area.setAlignment(Qt.AlignCenter)
@@ -164,7 +199,7 @@ class AnnotationTool(QWidget):
         self.scroll_area.setWidget(self.image_label)
         layout.addWidget(self.scroll_area, 1)
 
-        # 状态信息
+    def _build_status_bar(self, layout):
         self.status_label = QLabel("就绪")
         self.status_label.setStyleSheet(f"""
             QLabel {{
@@ -174,58 +209,7 @@ class AnnotationTool(QWidget):
                 border-radius: 4px;
             }}
         """)
-        self.status_label.setText("就绪")
         layout.addWidget(self.status_label)
-
-        # 初始化数据
-        self._initialize_state()
-
-        # 缩放和拖动相关
-
-        # 连接信号
-        self._connect_signals()
-
-        # 安装事件过滤器
-        self._install_event_filters()
-
-    def _apply_styles(self):
-        self.setStyleSheet(f"""
-            AnnotationTool {{
-                background-color: {DARK_BG};
-            }}
-            QPushButton {{
-                background-color: {PANEL_BG};
-                color: {TEXT_COLOR};
-                border: 1px solid {BORDER_COLOR};
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
-                min-height: 28px;
-            }}
-            QPushButton:hover {{
-                background-color: {MUTED_COLOR};
-                color: {DARK_BG};
-                border-color: {BASE_COLOR};
-            }}
-            QPushButton:pressed {{
-                background-color: {DEEP_SHADE_COLOR};
-                color: {TEXT_COLOR};
-            }}
-            QPushButton:checked {{
-                background-color: {BASE_COLOR};
-                color: {DARK_BG};
-                border: 2px solid {ACCENT_COLOR};
-            }}
-            QLabel {{
-                color: {TEXT_COLOR};
-                background-color: transparent;
-            }}
-            QScrollArea {{
-                border: 1px solid {BORDER_COLOR};
-                border-radius: 6px;
-                background-color: {DARK_BG};
-            }}
-        """)
 
     def _initialize_state(self):
         self.images = []
