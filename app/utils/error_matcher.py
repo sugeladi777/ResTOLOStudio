@@ -155,9 +155,6 @@ class ErrorMatcher:
                 return rule
         return None
 
-    def match_all(self, text):
-        return [rule for rule in self.rules if rule.match(text)]
-
     def format_error(self, text):
         rule = self.match(text)
         if rule:

@@ -282,13 +282,6 @@ class SXMFile:
         y_range = float(range_str[1]) * 1e9
         return x_range, y_range
 
-    def get_scan_offset_nm(self):
-        """获取扫描偏移，单位nm"""
-        offset_str = self.header.get('SCAN_OFFSET', '0 0').strip().split()
-        x_offset = float(offset_str[0]) * 1e9
-        y_offset = float(offset_str[1]) * 1e9
-        return x_offset, y_offset
-
     def get_pixel_size_nm(self):
         """获取每个像素的物理尺寸，单位nm"""
         x_range, y_range = self.get_scan_range_nm()
