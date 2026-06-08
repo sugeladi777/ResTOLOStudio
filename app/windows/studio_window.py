@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt5.QtCore import QTimer, pyqtSignal
+from PyQt5.QtGui import QShowEvent
+from PyQt5.QtWidgets import QTabBar
 from PyQt5.QtWidgets import QMainWindow
 
 from app.runtime import AppRuntime
@@ -61,6 +63,7 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
         self._build_studio_tabs()
         self._restore_window_geometry()
         self._restore_splitter_state()
+        QTimer.singleShot(0, self._restore_splitter_state)
         splitter = getattr(self, "main_splitter", None)
         if splitter is not None:
             splitter.splitterMoved.connect(self._persist_splitter_state)
@@ -84,11 +87,29 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
             self._style_refresh_timer.start(80)
         self._persist_window_geometry()
 
+    def showEvent(self, event: QShowEvent):
+        super().showEvent(event)
+        QTimer.singleShot(0, self._restore_splitter_state)
+
     def _refresh_responsive_styles(self):
         self.apply_styles()
         annotation_tool = getattr(self, "annotation_tool", None)
         if annotation_tool is not None and hasattr(annotation_tool, "apply_responsive_styles"):
             annotation_tool.apply_responsive_styles()
+
+    def _recommended_left_panel_width(self) -> int:
+        left_widget = getattr(self, "left_panel_widget", None)
+        if left_widget is None:
+            return 560
+
+        preferred_width = max(560, left_widget.sizeHint().width(), left_widget.minimumSizeHint().width())
+        tab_widget = getattr(self, "tab_widget", None)
+        tab_bar = tab_widget.tabBar() if tab_widget is not None and hasattr(tab_widget, "tabBar") else None
+        if isinstance(tab_bar, QTabBar):
+            tab_width = tab_bar.sizeHint().width() + 32
+            preferred_width = max(preferred_width, tab_width)
+
+        return min(preferred_width, left_widget.maximumWidth())
 
     def _restore_splitter_state(self):
         splitter = getattr(self, "main_splitter", None)
@@ -98,9 +119,11 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
             return
         ui_config = dict(getattr(config_service, "data", {}) or {})
         left_width = ui_config.get("ui_left_panel_width")
-        if not isinstance(left_width, int):
-            return
-        left_width = max(left_widget.minimumWidth(), min(left_width, left_widget.maximumWidth()))
+        recommended_width = max(left_widget.minimumWidth(), self._recommended_left_panel_width())
+        if isinstance(left_width, int):
+            left_width = max(recommended_width, min(left_width, left_widget.maximumWidth()))
+        else:
+            left_width = recommended_width
         total_width = max(self.width(), left_width + 400)
         splitter.setSizes([left_width, max(400, total_width - left_width)])
 

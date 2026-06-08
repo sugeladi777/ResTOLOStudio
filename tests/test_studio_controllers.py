@@ -302,6 +302,18 @@ def test_studio_window_persists_and_restores_ui_sizes(tmp_path: Path):
     assert other_window.height() >= 900
 
 
+def test_studio_window_uses_wider_default_left_panel_width(tmp_path: Path):
+    app = QApplication.instance() or QApplication([])
+    runtime = __import__("app.runtime", fromlist=["AppRuntime"]).AppRuntime.create(tmp_path)
+
+    window = ReSTOLOStudioApp(runtime)
+    window.show()
+    app.processEvents()
+
+    sizes = window.main_splitter.sizes()
+    assert sizes[0] >= 560
+
+
 def test_studio_controller_convert_sxm_files_updates_window_state(tmp_path: Path):
     color_file = tmp_path / "scan_color.png"
     color_file.write_text("color", encoding="utf-8")

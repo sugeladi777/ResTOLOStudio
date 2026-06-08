@@ -404,13 +404,13 @@ def initialize_studio_shell(window):
     splitter.setHandleWidth(12)
     left_widget = QWidget()
     left_widget.setLayout(left_layout)
-    left_widget.setMinimumWidth(420)
+    left_widget.setMinimumWidth(560)
     left_widget.setMaximumWidth(720)
     right_widget = QWidget()
     right_widget.setLayout(right_layout)
     splitter.addWidget(left_widget)
     splitter.addWidget(right_widget)
-    splitter.setSizes([520, 760])
+    splitter.setSizes([620, 760])
     window.main_splitter = splitter
     window.left_panel_widget = left_widget
     window.right_panel_widget = right_widget
