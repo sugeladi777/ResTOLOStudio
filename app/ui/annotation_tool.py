@@ -4,7 +4,7 @@ import os
 
 import cv2
 import numpy as np
-from PyQt5.QtCore import QPoint, Qt, pyqtSignal
+from PyQt5.QtCore import QPoint, QTimer, Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPalette, QPixmap
 from PyQt5.QtWidgets import (
     QHBoxLayout,
@@ -58,6 +58,9 @@ class AnnotationTool(QWidget):
     def __init__(self):
         super().__init__()
         self.setMinimumSize(840, 560)
+        self._pending_refresh_timer = QTimer(self)
+        self._pending_refresh_timer.setSingleShot(True)
+        self._pending_refresh_timer.timeout.connect(self._refresh_current_image)
         self.apply_responsive_styles()
 
         layout = QVBoxLayout(self)
@@ -523,6 +526,10 @@ class AnnotationTool(QWidget):
     def load_images(self, image_paths: list[str]) -> None:
         self.load_state(AnnotationState(images=list(image_paths)))
 
+    def _refresh_current_image(self) -> None:
+        if self.current_image is not None:
+            self.draw_annotations()
+
     def reset_view(self) -> None:
         self.zoom_level = 1.0
         self.pan_offset_x = 0
@@ -533,20 +540,26 @@ class AnnotationTool(QWidget):
 
     def show_current_image(self) -> None:
         if not self.images:
+            self.current_image = None
+            self.image_label.clear()
             self.status_label.setText("未加载图片")
             return
 
         image_path = self.images[self.current_index]
         if not os.path.exists(image_path):
+            self.current_image = None
+            self.image_label.clear()
             self.status_label.setText(f"图片不存在: {os.path.basename(image_path)}")
             return
 
         self.current_image = self._load_image_array(image_path)
         if self.current_image is None:
+            self.image_label.clear()
             self.status_label.setText(f"无法读取图片: {os.path.basename(image_path)}")
             return
 
         self.draw_annotations()
+        self._pending_refresh_timer.start(30)
 
     def draw_annotations(self) -> None:
         if self.current_image is None:

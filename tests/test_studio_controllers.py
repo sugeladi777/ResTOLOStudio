@@ -3,6 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+from PyQt5.QtWidgets import QApplication
+
+from app.core import AnnotationState
+from app.ui.annotation_tool import AnnotationTool
 from app.windows.runtime_controller import StudioRuntimeController
 from app.windows.studio_controller import StudioController
 
@@ -252,6 +256,28 @@ class DummySessionWorkflowForController:
 
     def selected_scan_result(self, session_index: int, result_index: int):
         return None, None
+
+
+def test_annotation_tool_load_state_renders_pixmap_for_png(tmp_path: Path):
+    app = QApplication.instance() or QApplication([])
+
+    image_path = tmp_path / "sample.png"
+    image_path.write_bytes(
+        bytes.fromhex(
+            "89504E470D0A1A0A0000000D4948445200000001000000010802000000907753DE"
+            "0000000C49444154789C63F8FFFF3F0005FE02FEA7E5C9A00000000049454E44AE426082"
+        )
+    )
+
+    tool = AnnotationTool()
+    tool.resize(900, 700)
+    tool.load_state(AnnotationState(images=[str(image_path)]))
+    app.processEvents()
+
+    pixmap = tool.image_label.pixmap()
+    assert pixmap is not None
+    assert not pixmap.isNull()
+    assert "sample.png" in tool.status_label.text()
 
 
 def test_studio_controller_convert_sxm_files_updates_window_state(tmp_path: Path):
