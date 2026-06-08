@@ -55,10 +55,10 @@ class TrainingWorkflowService:
         log,
     ) -> bool:
         if not annotation_service.has_images(state):
-            log("Error: load training images first")
+            log("错误：请先加载训练图像")
             return False
         if not annotation_service.has_annotations(state):
-            log("Error: load or create annotations first")
+            log("错误：请先加载或创建标注")
             return False
         return True
 
@@ -73,11 +73,11 @@ class TrainingWorkflowService:
         total_images = len(state.images)
         removed_count = total_images - len(annotated_images)
         if removed_count > 0:
-            log(f"Removed {removed_count} unannotated images, kept {len(annotated_images)} annotated images")
+            log(f"已移除 {removed_count} 张未标注图像，保留 {len(annotated_images)} 张已标注图像")
         else:
-            log(f"All {total_images} images contain annotations")
+            log(f"全部 {total_images} 张图像都包含标注")
         if not annotated_images:
-            log("Error: no annotated images found")
+            log("错误：未找到已标注图像")
             return None
 
         img_size = self.dataset_service.optimal_image_size(annotated_images)
@@ -86,9 +86,9 @@ class TrainingWorkflowService:
         train_images, val_images = self.dataset_service.split_yolo_images(annotated_images)
         total_annotated = len(annotated_images)
         if total_annotated == 1:
-            log("Only one annotated image found, using it for both train and validation")
+            log("仅有一张已标注图像，将同时用于训练和验证")
         else:
-            log(f"Annotated images: {total_annotated}, train={len(train_images)}, val={len(val_images)}")
+            log(f"已标注图像：{total_annotated}，训练 {len(train_images)}，验证 {len(val_images)}")
 
         train_images_dir = os.path.join(temp_dir, "images", "train")
         val_images_dir = os.path.join(temp_dir, "images", "val")
@@ -105,8 +105,8 @@ class TrainingWorkflowService:
             class_names,
             data_yaml_path,
         )
-        log(f"Generated data config: {data_yaml_path}")
-        log(f"Class count: {len(class_names)}")
+        log(f"已生成数据配置：{data_yaml_path}")
+        log(f"类别数量：{len(class_names)}")
         return YoloTrainingPlan(
             data_yaml_path=data_yaml_path,
             annotated_images=annotated_images,
@@ -155,19 +155,19 @@ class TrainingWorkflowService:
         log,
     ) -> tuple[str | None, str | None]:
         if resnet_data_path:
-            log(f"Using ResNet dataset: {resnet_data_path}")
+            log(f"使用分类数据集：{resnet_data_path}")
             dataset_classes = self._list_resnet_classes(resnet_data_path)
-            log(f"Detected classes from dataset: {dataset_classes}")
+            log(f"数据集类别：{dataset_classes}")
             try:
                 return self._run_kfold_split(resnet_data_path, log)
             except Exception as exc:  # noqa: BLE001
-                log(f"Dataset split failed, using fallback split: {exc}")
+                log(f"数据划分失败，改用回退方案：{exc}")
                 return self._fallback_project_split(resnet_data_path, project_dir, dataset_classes)
 
         crop_dir = os.path.join(project_dir, "resnet_crop")
         os.makedirs(crop_dir, exist_ok=True)
-        log(f"Selected training class indices: {selected_class_indices}")
-        log(f"Training classes: {class_names}")
+        log(f"选中训练类别索引：{selected_class_indices}")
+        log(f"训练类别：{class_names}")
         selected_class_map = {idx: name for idx, name in zip(selected_class_indices, class_names)}
         summary = self.dataset_service.crop_resnet_dataset(
             annotation_source,
@@ -176,22 +176,22 @@ class TrainingWorkflowService:
             selected_class_map,
         )
         if summary.crop_count == 0:
-            log("Error: failed to crop any annotated regions")
+            log("错误：未能裁剪出任何已标注区域")
             return None, None
 
-        log(f"Cropped {summary.crop_count} annotated regions")
+        log(f"已裁剪 {summary.crop_count} 个标注区域")
         try:
             training_path, testing_path = self._run_kfold_split(crop_dir, log)
-            log("Dataset split complete")
+            log("数据划分完成")
             return training_path, testing_path
         except Exception as exc:  # noqa: BLE001
-            log(f"Dataset split failed, using fallback split: {exc}")
+            log(f"数据划分失败，改用回退方案：{exc}")
             return self._fallback_project_split(crop_dir, project_dir, sorted(summary.actual_classes))
 
     def _run_kfold_split(self, source_dir: str, log) -> tuple[str, str]:
         from ml.data_divider import kfold
 
-        log(f"Running data split: {source_dir}, k=10")
+        log(f"正在划分数据：{source_dir}，k=10")
         kfold(source_dir, k=10)
         jour = f"{time.localtime().tm_mon}{time.localtime().tm_mday}"
         return source_dir + f"_train_{jour}_0/", source_dir + f"_test_{jour}_0/"

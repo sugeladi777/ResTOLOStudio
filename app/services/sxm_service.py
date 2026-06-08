@@ -64,13 +64,13 @@ class SxmService:
                     "color_path": color_path,
                 }
                 logs.append(
-                    "Converted SXM file "
+                    "已转换 SXM 文件 "
                     f"{os.path.basename(file_path)} "
-                    f"(scan range: {sxm.get_scan_range_nm()[0]:.2f}x{sxm.get_scan_range_nm()[1]:.2f} nm, "
-                    f"pixel size: {px_x:.4f}x{px_y:.4f} nm/pixel)"
+                    f"(扫描范围：{sxm.get_scan_range_nm()[0]:.2f}x{sxm.get_scan_range_nm()[1]:.2f} nm，"
+                    f"像素尺寸：{px_x:.4f}x{px_y:.4f} nm/像素)"
                 )
             except Exception as exc:  # noqa: BLE001
-                logs.append(f"Failed to load SXM file {os.path.basename(file_path)}: {exc}")
+                logs.append(f"加载 SXM 文件失败 {os.path.basename(file_path)}：{exc}")
 
         return SxmConversionResult(
             files=result_files,

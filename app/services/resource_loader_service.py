@@ -36,7 +36,7 @@ class ResourceLoaderService:
         if not file_path:
             return False
         model_manager.load_yolo_model(file_path)
-        log(f"Loaded YOLO model: {file_path}")
+        log(f"已加载检测模型：{file_path}")
         for target in targets:
             if target is not None:
                 target.setText(file_path)
@@ -46,7 +46,7 @@ class ResourceLoaderService:
         if not file_path:
             return False
         model_manager.load_resnet_model(file_path)
-        log(f"Loaded ResNet model: {file_path}")
+        log(f"已加载分类模型：{file_path}")
         for target in targets:
             if target is not None:
                 target.setText(file_path)
@@ -55,7 +55,7 @@ class ResourceLoaderService:
     def load_classes_file(self, file_path: str, log, *targets) -> bool:
         if not file_path:
             return False
-        log(f"Loaded classes YAML: {file_path}")
+        log(f"已加载类别文件：{file_path}")
         for target in targets:
             if target is not None:
                 target.setText(file_path)
@@ -64,16 +64,16 @@ class ResourceLoaderService:
     def load_resnet_dataset(self, directory: str, log, target=None) -> tuple[bool, int | None]:
         if not directory:
             return False, None
-        log(f"Loaded ResNet dataset: {directory}")
+        log(f"已加载分类数据：{directory}")
         if target is not None:
             target.setText(directory)
         try:
             classes = os.listdir(directory)
             num_classes = len([item for item in classes if os.path.isdir(os.path.join(directory, item))])
-            log(f"Detected {num_classes} classes")
+            log(f"识别到 {num_classes} 个类别")
             return True, num_classes
         except Exception as exc:  # noqa: BLE001
-            log(f"Failed to validate dataset directory: {exc}")
+            log(f"校验数据目录失败：{exc}")
             return True, None
 
     def _set_default_model_path(self, path: Path, loader, *targets) -> None:

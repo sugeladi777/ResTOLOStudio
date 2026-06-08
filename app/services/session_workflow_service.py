@@ -47,16 +47,41 @@ class SessionWorkflowService:
             return session, None
         return session, session.scan_results[result_index]
 
-    def session_list_labels(self) -> list[str]:
+    def _session_stage_text(self, session: SessionRecord) -> str:
+        if session.inference_results:
+            return "结果复查"
+        if session.training_results:
+            return "待推理"
+        if session.scan_results:
+            return "待训练"
+        return "采集准备"
+
+    def session_list_labels(self, sessions: list[SessionRecord] | None = None) -> list[str]:
+        source = sessions if sessions is not None else self.list_sessions()
         return [
-            f"{session.id} | scan={len(session.scan_results)} | infer={len(session.inference_results)}"
-            for session in self.list_sessions()
+            (
+                f"{getattr(session, 'label', '') or session.id} | {self._session_stage_text(session)}\n"
+                f"扫描 {len(session.scan_results)} 组  训练 {len(session.training_results)} 次  推理 {len(session.inference_results)} 次"
+            )
+            for session in source
         ]
 
     def result_labels(self, session: SessionRecord | None) -> list[str]:
         if session is None:
             return []
-        return [item.label for item in session.scan_results]
+        labels: list[str] = []
+        for index, item in enumerate(session.scan_results, start=1):
+            saved = len(getattr(item, "saved", []) or [])
+            raw = getattr(item, "raw", {}) or {}
+            channels = raw.get("channels") or raw.get("scan_channels") or []
+            channel_text = ", ".join(str(channel) for channel in channels[:2]) if channels else "未记录通道"
+            if len(channels) > 2:
+                channel_text += "..."
+            labels.append(
+                f"{index}. {item.label or f'扫描结果 {index}'}\n"
+                f"导出 {saved} 个文件 | {channel_text}"
+            )
+        return labels
 
     def result_detail(self, session: SessionRecord | None, result_index: int) -> str:
         if session is None or result_index < 0 or result_index >= len(session.scan_results):

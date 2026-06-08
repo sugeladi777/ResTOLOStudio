@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import QTimer, pyqtSignal
 from PyQt5.QtWidgets import QMainWindow
 
 from app.runtime import AppRuntime
 from app.windows.runtime_controller import StudioRuntimeController
-from app.windows.studio_shell import StudioShellSignalsMixin, initialize_studio_shell
 from app.windows.studio_controller import StudioController
 from app.windows.studio_panels import StudioPanelsMixin
+from app.windows.studio_shell import StudioShellSignalsMixin, initialize_studio_shell
 from app.windows.studio_ui import StudioUiMixin
 from app.windows.training_controller import StudioTrainingController
 
@@ -23,6 +23,9 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
 
     def __init__(self, runtime: AppRuntime | None = None):
         QMainWindow.__init__(self)
+        self._style_refresh_timer = QTimer(self)
+        self._style_refresh_timer.setSingleShot(True)
+        self._style_refresh_timer.timeout.connect(self._refresh_responsive_styles)
         initialize_studio_shell(self)
         self.runtime = runtime or AppRuntime.create(PROJECT_ROOT)
         self.setWindowTitle("ReSTOLO Studio")
@@ -56,7 +59,87 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
 
         self.studio.apply_default_model_paths()
         self._build_studio_tabs()
+        self._restore_window_geometry()
+        self._restore_splitter_state()
+        splitter = getattr(self, "main_splitter", None)
+        if splitter is not None:
+            splitter.splitterMoved.connect(self._persist_splitter_state)
+        if hasattr(self, "tab_widget"):
+            self.tab_widget.setTabText(0, "标注")
+            self.tab_widget.setTabText(1, "训练")
+            self.tab_widget.setTabText(2, "推理")
+            if self.tab_widget.count() > 3:
+                self.tab_widget.setTabText(3, "采集")
+            if self.tab_widget.count() > 4:
+                self.tab_widget.setTabText(4, "结果")
         self.studio.reload_sessions()
+        self.update_button_states()
+        if hasattr(self, "tab_widget"):
+            self.on_tab_changed(self.tab_widget.currentIndex())
+        self._refresh_responsive_styles()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_style_refresh_timer"):
+            self._style_refresh_timer.start(80)
+        self._persist_window_geometry()
+
+    def _refresh_responsive_styles(self):
+        self.apply_styles()
+        annotation_tool = getattr(self, "annotation_tool", None)
+        if annotation_tool is not None and hasattr(annotation_tool, "apply_responsive_styles"):
+            annotation_tool.apply_responsive_styles()
+
+    def _restore_splitter_state(self):
+        splitter = getattr(self, "main_splitter", None)
+        left_widget = getattr(self, "left_panel_widget", None)
+        config_service = getattr(self, "config_service", None)
+        if splitter is None or left_widget is None or config_service is None:
+            return
+        ui_config = dict(getattr(config_service, "data", {}) or {})
+        left_width = ui_config.get("ui_left_panel_width")
+        if not isinstance(left_width, int):
+            return
+        left_width = max(left_widget.minimumWidth(), min(left_width, left_widget.maximumWidth()))
+        total_width = max(self.width(), left_width + 400)
+        splitter.setSizes([left_width, max(400, total_width - left_width)])
+
+    def _persist_splitter_state(self, pos: int, index: int):
+        del index
+        left_widget = getattr(self, "left_panel_widget", None)
+        config_service = getattr(self, "config_service", None)
+        if left_widget is None or config_service is None:
+            return
+        left_width = max(left_widget.minimumWidth(), min(int(pos), left_widget.maximumWidth()))
+        payload = dict(getattr(config_service, "data", {}) or {})
+        if payload.get("ui_left_panel_width") == left_width:
+            return
+        payload["ui_left_panel_width"] = left_width
+        config_service.save(payload)
+
+    def _restore_window_geometry(self):
+        config_service = getattr(self, "config_service", None)
+        if config_service is None:
+            return
+        payload = dict(getattr(config_service, "data", {}) or {})
+        width = payload.get("ui_window_width")
+        height = payload.get("ui_window_height")
+        if not isinstance(width, int) or not isinstance(height, int):
+            return
+        self.resize(max(1000, width), max(700, height))
+
+    def _persist_window_geometry(self):
+        config_service = getattr(self, "config_service", None)
+        if config_service is None:
+            return
+        payload = dict(getattr(config_service, "data", {}) or {})
+        width = int(self.width())
+        height = int(self.height())
+        if payload.get("ui_window_width") == width and payload.get("ui_window_height") == height:
+            return
+        payload["ui_window_width"] = width
+        payload["ui_window_height"] = height
+        config_service.save(payload)
 
     def load_infer_images(self):
         return self.studio.load_infer_images()
@@ -98,13 +181,22 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
         return self.training.train_resnet()
 
     def disable_controls(self):
-        return self.runtime_controller.disable_controls()
+        controller = getattr(self, "runtime_controller", None)
+        if controller is None:
+            return None
+        return controller.disable_controls()
 
     def enable_controls(self):
-        return self.runtime_controller.enable_controls()
+        controller = getattr(self, "runtime_controller", None)
+        if controller is None:
+            return None
+        return controller.enable_controls()
 
     def on_inference_error(self, error_msg):
-        return self.runtime_controller.on_inference_error(error_msg)
+        controller = getattr(self, "runtime_controller", None)
+        if controller is None:
+            return None
+        return controller.on_inference_error(error_msg)
 
     def connect_nanonis(self):
         return self.studio.connect_nanonis()
@@ -139,39 +231,89 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
     def use_selected_result_for_inference(self):
         return self.studio.use_selected_result_for_inference()
 
+    def open_selected_session_directory(self):
+        return self.studio.open_selected_session_directory()
+
+    def open_selected_training_output(self):
+        return self.studio.open_selected_training_output()
+
+    def open_selected_inference_output(self):
+        return self.studio.open_selected_inference_output()
+
+    def open_selected_result_directory(self):
+        return self.studio.open_selected_result_directory()
+
+    def _on_sxm_color_toggle(self, state):
+        return self.studio.set_sxm_color_mode(state)
+
+    def _get_gray_path(self, image_path: str) -> str:
+        return self.studio.get_gray_path(image_path)
+
     def on_inference_finished(self):
-        self.runtime_controller.on_inference_finished()
+        controller = getattr(self, "runtime_controller", None)
+        if controller is not None:
+            controller.on_inference_finished()
         return self.studio.on_inference_finished()
 
     def on_progress_updated(self, current, total):
-        return self.runtime_controller.on_progress_updated(current, total)
+        controller = getattr(self, "runtime_controller", None)
+        if controller is None:
+            return None
+        return controller.on_progress_updated(current, total)
 
     def on_training_finished(self):
-        return self.runtime_controller.on_training_finished()
+        controller = getattr(self, "runtime_controller", None)
+        if controller is None:
+            return None
+        return controller.on_training_finished()
 
     def on_training_error(self, error_msg):
-        return self.runtime_controller.on_training_error(error_msg)
+        controller = getattr(self, "runtime_controller", None)
+        if controller is None:
+            return None
+        return controller.on_training_error(error_msg)
 
     def on_training_progress_updated(self, current, total):
-        return self.runtime_controller.on_training_progress_updated(current, total)
+        controller = getattr(self, "runtime_controller", None)
+        if controller is None:
+            return None
+        return controller.on_training_progress_updated(current, total)
 
     def on_train_loss_updated(self, epoch, box, obj, cls, total):
-        return self.runtime_controller.on_train_loss_updated(epoch, box, obj, cls, total)
+        controller = getattr(self, "runtime_controller", None)
+        if controller is None:
+            return None
+        return controller.on_train_loss_updated(epoch, box, obj, cls, total)
 
     def on_val_metrics_updated(self, epoch, precision, recall, map50, map50_95):
-        return self.runtime_controller.on_val_metrics_updated(epoch, precision, recall, map50, map50_95)
+        controller = getattr(self, "runtime_controller", None)
+        if controller is None:
+            return None
+        return controller.on_val_metrics_updated(epoch, precision, recall, map50, map50_95)
 
     def on_resnet_loss_updated(self, epoch, train_loss, pred_error):
-        return self.runtime_controller.on_resnet_loss_updated(epoch, train_loss, pred_error)
+        controller = getattr(self, "runtime_controller", None)
+        if controller is None:
+            return None
+        return controller.on_resnet_loss_updated(epoch, train_loss, pred_error)
 
     def on_annotation_updated(self):
-        return self.runtime_controller.on_annotation_updated()
+        controller = getattr(self, "runtime_controller", None)
+        if controller is None:
+            return None
+        return controller.on_annotation_updated()
 
     def on_tab_changed(self, index):
-        return self.runtime_controller.on_tab_changed(index)
+        controller = getattr(self, "runtime_controller", None)
+        if controller is None:
+            return None
+        return controller.on_tab_changed(index)
 
     def update_button_states(self):
-        return self.runtime_controller.update_button_states()
+        controller = getattr(self, "runtime_controller", None)
+        if controller is None:
+            return None
+        return controller.update_button_states()
 
     def reload_sessions(self):
         return self.studio.reload_sessions()
@@ -181,6 +323,9 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
 
     def _result_selected(self, index: int):
         return self.studio.on_result_selected(index)
+
+    def _result_comparison_changed(self, index: int):
+        return self.studio.on_result_comparison_changed(index)
 
 
 ReSTOLOStudioWindow = ReSTOLOStudioApp

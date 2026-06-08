@@ -1,56 +1,21 @@
 # ReSTOLO Studio
 
-ReSTOLO Studio is a desktop application for STM-oriented workflows:
+ReSTOLO Studio 是一个面向扫描隧道显微镜（STM）实验工作流的桌面项目，用于完成扫描数据采集、图像查看与标注、数据集整理、模型训练以及推理分析等工作。
 
-- acquire scan data from Nanonis / STM control paths
-- inspect and annotate images, including `.sxm` conversion
-- train YOLO and ResNet models
-- run inference and manage experiment sessions
+## 项目目录说明
 
-## Current architecture
-
-- `main.py`: application entrypoint
-- `app/bootstrap.py`: creates `QApplication`, runtime, and main window
-- `app/core/`: shared primitives such as project paths and session/result models
-- `app/runtime.py`: shared runtime services and project paths
-- `app/windows/`: studio window, acquisition panel, results panel, studio controller, training controller, runtime controller, and studio shell
-- `app/windows/training_controller.py`: studio-owned YOLO / ResNet training workflows
-- `app/windows/runtime_controller.py`: studio-owned runtime callbacks and UI state updates
-- `app/services/`: application services such as config, annotation state/file IO, acquisition workflows, image loading workflows, inference, resource loading, session/result workflows, training workflows, training runners, SXM conversion, dataset preparation, and training job persistence
-- `app/ui/`: reusable Qt widgets such as the annotation tool and loss dialog; widgets should focus on interaction/presentation rather than file IO
-- `app/utils/`: model, training, inference, error matching, and SXM parsing helpers
-- `nanonis/`: Nanonis TCP and scan workflow integration
-- `ml/`: YOLO / ResNet training and inference implementation
-- `assets/`: default models, classes, and app config assets
-- `sessions/`: generated scan, training, and inference outputs
-
-## Architecture notes
-
-The project now uses a clearer modular architecture:
-
-- the studio window remains the Qt shell
-- runtime dependencies are created in `app/runtime.py`
-- annotation state now has explicit core models and an `annotation_service`
-- annotation file loading/saving has been moved out of `AnnotationTool`
-- Studio data/model loading flows now live in `studio_controller`
-- Studio training flows now live in `training_controller`
-- Studio runtime/state flows now live in `runtime_controller`
-- image loading, SXM conversion coordination, annotation state sync, and inference image preparation now live in `image_workflow_service`
-- default model paths, classes files, and dataset path loading now live in `resource_loader_service`
-- Nanonis connection configuration, scan geometry assembly, and scan result persistence now live in `acquisition_workflow_service`
-- session creation, selection, and result persistence orchestration now lives in `session_workflow_service`
-- training session binding, dataset preparation, and training plan generation now live in `training_workflow_service`
-- YOLO / ResNet execution wrappers and ResNet log parsing now live in `training_runner_service`
-- reusable SXM conversion and dataset preparation logic now lives under `app/services/`
-- sessions and result records now use explicit core models instead of raw dictionaries
-- training runs now have a dedicated persistence path via `training_job_service`
-
-## Recommended next steps
-
-- continue shrinking Qt-window-level orchestration where it still leaks workflow details
-- extend the smoke coverage from workflow integration into more realistic file- and UI-driven scenarios
-
-## Verification
-
-- `python -m compileall app tests`
-- `pytest tests/test_resource_loader_service.py tests/test_file_pipeline_smoke.py tests/test_workflow_integration_smoke.py tests/test_inference_workflow_service.py tests/test_acquisition_workflow_service.py tests/test_training_runner_service.py tests/test_training_workflow_service.py tests/test_image_workflow_service.py tests/test_session_workflow_service.py tests/test_studio_controllers.py tests/test_runtime_smoke.py tests/test_result_store_service.py`
+- `app/`：应用主代码目录，包含界面、控制器、服务层、核心数据模型与启动逻辑。
+- `app/bootstrap.py`：应用启动装配入口，负责创建运行时对象、Qt 应用和主窗口。
+- `app/core/`：核心数据结构与基础路径定义，例如会话记录、结果记录、标注状态等。
+- `app/services/`：业务服务层，负责标注处理、数据集准备、SXM 转换、采集流程、训练流程、推理流程、资源加载、结果存储等逻辑。
+- `app/windows/`：主窗口及各类控制器，负责把界面操作与服务层逻辑组织起来。
+- `app/ui/`：可复用界面组件，例如标注工具、训练损失曲线弹窗等。
+- `app/utils/`：底层工具模块，例如模型管理、训练管理、推理管理、错误匹配、SXM 解析等。
+- `assets/`：项目默认资源目录，包含模型文件、类别文件、错误模式配置等静态资源。
+- `ml/`：模型训练与推理相关实现，包含 YOLO、ResNet 及其配套工具代码。
+- `nanonis/`：与 Nanonis 设备通信及扫描流程相关的集成代码。
+- `sessions/`：运行过程中生成的会话数据、扫描结果、训练结果和推理结果目录。
+- `tests/`：项目测试代码，覆盖主要服务层和关键流程。
+- `main.py`：项目主入口文件。
+- `requirements.txt`：基于 `pip` 的依赖说明。
+- `environment.yml`：基于 `conda` 的环境说明。

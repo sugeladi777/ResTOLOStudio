@@ -54,7 +54,7 @@ class TrainingRunnerService:
         enable_imbalance: bool,
         callbacks: ResnetTrainingCallbacks,
     ) -> None:
-        callbacks.log("Starting ResNet training")
+        callbacks.log("开始训练分类模型")
         resnet_module = importlib.import_module("ml.ResNet_train")
         parser = _ResnetLogParser(callbacks, epochs)
         custom_stream = _CustomStream(parser.handle_line)
@@ -62,7 +62,7 @@ class TrainingRunnerService:
         original_argv = sys.argv.copy()
         sys.stdout = custom_stream
         try:
-            callbacks.log(f"Class imbalance handling: {'enabled' if enable_imbalance else 'disabled'}")
+            callbacks.log(f"类别不平衡处理：{'开启' if enable_imbalance else '关闭'}")
             sys.argv = [
                 "ResNet_train.py",
                 "--training_path",

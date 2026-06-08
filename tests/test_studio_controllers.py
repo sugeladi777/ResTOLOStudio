@@ -26,6 +26,41 @@ class DummyLineEdit:
         self._value = value
 
 
+class DummyTextBlock:
+    def __init__(self, value: str = "") -> None:
+        self._value = value
+
+    def setPlainText(self, value: str) -> None:
+        self._value = value
+
+    def toPlainText(self) -> str:
+        return self._value
+
+
+class DummyComboBox:
+    def __init__(self, items: list[str] | None = None, index: int = 0) -> None:
+        self.items = list(items or [])
+        self._index = index
+
+    def currentText(self) -> str:
+        if 0 <= self._index < len(self.items):
+            return self.items[self._index]
+        return ""
+
+    def currentIndex(self) -> int:
+        return self._index
+
+    def addItem(self, text: str) -> None:
+        self.items.append(text)
+
+    def clear(self) -> None:
+        self.items.clear()
+        self._index = 0
+
+    def blockSignals(self, _value: bool) -> None:
+        return None
+
+
 class DummyAnnotationTool:
     def __init__(self, state) -> None:
         self._state = state
@@ -183,13 +218,40 @@ class DummyListWidget:
     def setCurrentRow(self, index: int) -> None:
         self.current_row = index
 
+    def currentRow(self) -> int:
+        return self.current_row if self.current_row is not None else -1
+
 
 class DummySessionWorkflowForController:
-    def session_list_labels(self) -> list[str]:
-        return ["session-1 | scan=1 | infer=0"]
-
     def list_sessions(self):
         return [SimpleNamespace(id="session-1", scan_results=[1], inference_results=[])]
+
+    def session_list_labels(self, sessions=None) -> list[str]:
+        source = sessions if sessions is not None else self.list_sessions()
+        return [
+            (
+                f"{session.id} | 待训练\n"
+                f"扫描 {len(getattr(session, 'scan_results', []) or [])} 条 "
+                f"训练 {len(getattr(session, 'training_results', []) or [])} 次 "
+                f"推理 {len(getattr(session, 'inference_results', []) or [])} 次"
+            )
+            for session in source
+        ]
+
+    def selected_session(self, index: int):
+        if index != 0:
+            return None
+        return SimpleNamespace(
+            id="session-1",
+            label="demo-session",
+            path="",
+            scan_results=[],
+            inference_results=[],
+            training_results=[],
+        )
+
+    def selected_scan_result(self, session_index: int, result_index: int):
+        return None, None
 
 
 def test_studio_controller_convert_sxm_files_updates_window_state(tmp_path: Path):
@@ -249,6 +311,12 @@ def test_studio_controller_uses_acquisition_workflow_for_scan_state():
         scan_label_edit=DummyLineEdit("scan-demo"),
         nanonis_service=SimpleNamespace(),
         session_list=DummyListWidget(),
+        result_list=DummyListWidget(),
+        session_search_edit=DummyLineEdit(""),
+        session_sort_combo=DummyComboBox(["最近活跃优先"]),
+        session_browser_context_text=DummyTextBlock(),
+        result_compare_combo=DummyComboBox(["不进行对比"]),
+        result_compare_summary_text=DummyTextBlock(),
         pending_scan_results=[],
         log=logs.append,
         current_session=None,
@@ -270,7 +338,33 @@ def test_studio_controller_uses_acquisition_workflow_for_scan_state():
     assert acquisition.started_sessions[0][1] == "scan-demo"
     assert acquisition.append_scan_calls == [("session-1", {"label": "scan_a"})]
     assert acquisition.append_workflow_calls == [("session-1", {"pre_scan": {"label": "pre"}, "post_scan": {"label": "post"}})]
-    assert logs[-2:] == ["Scan completed: scan_a", "Workflow completed: pre-scan -> pulse -> post-scan"]
+    assert logs[-2:] == ["扫描完成：scan_a", "流程完成：预扫 -> 脉冲 -> 后扫"]
+
+
+def test_studio_controller_reload_sessions_uses_richer_labels():
+    session_list = DummyListWidget()
+    window = SimpleNamespace(
+        session_workflow_service=DummySessionWorkflowForController(),
+        session_list=session_list,
+        result_list=DummyListWidget(),
+        session_search_edit=DummyLineEdit(""),
+        session_sort_combo=DummyComboBox(["最近活跃优先"]),
+        session_browser_context_text=DummyTextBlock(),
+        result_compare_combo=DummyComboBox(["不进行对比"]),
+        result_compare_summary_text=DummyTextBlock(),
+        result_detail_text=DummyTextBlock(),
+        result_preview_label=SimpleNamespace(clear=lambda: None, setText=lambda _value: None),
+        result_preview_caption=DummyLineEdit(),
+        result_compare_preview_label=SimpleNamespace(clear=lambda: None, setText=lambda _value: None),
+        result_compare_preview_caption=DummyLineEdit(),
+    )
+
+    controller = StudioController(window)
+    controller.reload_sessions()
+
+    assert len(session_list.items) == 1
+    assert "待训练" in session_list.items[0]
+    assert "扫描 1 条" in session_list.items[0]
 
 
 def test_runtime_controller_update_button_states_and_tab_sync(tmp_path: Path):
@@ -300,9 +394,67 @@ def test_runtime_controller_update_button_states_and_tab_sync(tmp_path: Path):
         infer_load_yolo_model_btn=DummyButton(),
         infer_load_resnet_model_btn=DummyButton(),
         start_inference_btn=DummyButton(),
+        workspace_mode_detail=DummyLineEdit(),
+        workflow_focus_detail=DummyLineEdit(),
+        operator_hint_detail=DummyLineEdit(),
+        workspace_images_value=DummyLineEdit(),
+        workspace_images_detail=DummyLineEdit(),
+        workspace_annotations_value=DummyLineEdit(),
+        workspace_annotations_detail=DummyLineEdit(),
+        workspace_inference_queue_value=DummyLineEdit(),
+        workspace_inference_queue_detail=DummyLineEdit(),
+        workspace_session_value=DummyLineEdit(),
+        workspace_session_detail=DummyLineEdit(),
+        acquisition_session_name_value=DummyLineEdit(),
+        acquisition_session_name_detail=DummyLineEdit(),
+        acquisition_scan_count_value=DummyLineEdit(),
+        acquisition_scan_count_detail=DummyLineEdit(),
+        acquisition_training_state_value=DummyLineEdit(),
+        acquisition_training_state_detail=DummyLineEdit(),
+        acquisition_inference_state_value=DummyLineEdit(),
+        acquisition_inference_state_detail=DummyLineEdit(),
+        nano_endpoint_value=DummyLineEdit(),
+        nano_endpoint_detail=DummyLineEdit(),
+        nano_link_value=DummyLineEdit(),
+        nano_link_detail=DummyLineEdit(),
+        nano_protocol_value=DummyLineEdit(),
+        nano_protocol_detail=DummyLineEdit(),
+        nano_last_action_value=DummyLineEdit(),
+        nano_last_action_detail=DummyLineEdit(),
+        log_recent_value=DummyLineEdit(),
+        log_recent_detail=DummyLineEdit(),
+        log_level_value=DummyLineEdit(),
+        log_level_detail=DummyLineEdit(),
+        result_session_scan_count_value=DummyLineEdit(),
+        result_session_scan_count_detail=DummyLineEdit(),
+        result_stage_value=DummyLineEdit(),
+        result_stage_detail=DummyLineEdit(),
+        result_training_state_value=DummyLineEdit(),
+        result_training_state_detail=DummyLineEdit(),
+        result_difference_value=DummyLineEdit(),
+        result_difference_detail=DummyLineEdit(),
+        overview_session_value=DummyLineEdit(),
+        overview_session_detail=DummyLineEdit(),
+        overview_training_value=DummyLineEdit(),
+        overview_training_detail=DummyLineEdit(),
+        overview_inference_value=DummyLineEdit(),
+        overview_inference_detail=DummyLineEdit(),
+        overview_next_action_value=DummyLineEdit(),
+        overview_next_action_detail=DummyLineEdit(),
+        acquisition_session_context_text=DummyTextBlock(),
+        latest_scan_context_text=DummyTextBlock(),
+        session_stage_context_text=DummyTextBlock(),
+        latest_activity_context_text=DummyTextBlock(),
+        result_difference_context_text=DummyTextBlock(),
+        session_timeline_text=DummyTextBlock(),
+        session_sort_combo=DummyComboBox(["最近活跃优先"]),
+        result_compare_combo=DummyComboBox(["不进行对比"]),
+        result_compare_summary_text=DummyTextBlock(),
+        tab_widget=SimpleNamespace(currentIndex=lambda: 0),
         log=logs.append,
         detect_and_display_classes=lambda: None,
         _get_gray_path=lambda path: f"gray::{path}",
+        current_session=SimpleNamespace(label="demo", id="session-1", scan_results=[], training_results=[], inference_results=[]),
     )
     inference_manager.images = ["gray.png"]
 
@@ -319,7 +471,7 @@ def test_runtime_controller_update_button_states_and_tab_sync(tmp_path: Path):
     assert window.start_inference_btn.enabled is True
     assert annotation_tool.mode_changes[-1] is False
     assert inference_manager.loaded_batches[-1] == ["gray::color.png"]
-    assert logs[-1] == "Switched to inference mode"
+    assert logs[-1] == "已切换到推理模式。"
 
 
 def test_studio_controller_uses_inference_workflow_for_start_and_finish():
@@ -346,6 +498,12 @@ def test_studio_controller_uses_inference_workflow_for_start_and_finish():
         pending_inference_session_id=None,
         pending_inference_output_dir=None,
         session_list=DummyListWidget(),
+        result_list=DummyListWidget(),
+        session_search_edit=DummyLineEdit(""),
+        session_sort_combo=DummyComboBox(["最近活跃优先"]),
+        session_browser_context_text=DummyTextBlock(),
+        result_compare_combo=DummyComboBox(["不进行对比"]),
+        result_compare_summary_text=DummyTextBlock(),
         log=logs.append,
     )
 
@@ -369,7 +527,7 @@ def test_studio_controller_uses_inference_workflow_for_start_and_finish():
     assert inference_workflow.persist_calls == [
         ("infer-session", Path("infer-output"), ["result_a.png"], "actual-dir")
     ]
-    assert logs[0] == "Starting inference for session: infer-session"
+    assert logs[0] == "开始执行推理，会话：infer-session"
 
 
 def test_runtime_controller_disables_actions_when_inputs_missing():
@@ -393,7 +551,65 @@ def test_runtime_controller_disables_actions_when_inputs_missing():
         infer_load_yolo_model_btn=DummyButton(),
         infer_load_resnet_model_btn=DummyButton(),
         start_inference_btn=DummyButton(),
+        workspace_mode_detail=DummyLineEdit(),
+        workflow_focus_detail=DummyLineEdit(),
+        operator_hint_detail=DummyLineEdit(),
+        workspace_images_value=DummyLineEdit(),
+        workspace_images_detail=DummyLineEdit(),
+        workspace_annotations_value=DummyLineEdit(),
+        workspace_annotations_detail=DummyLineEdit(),
+        workspace_inference_queue_value=DummyLineEdit(),
+        workspace_inference_queue_detail=DummyLineEdit(),
+        workspace_session_value=DummyLineEdit(),
+        workspace_session_detail=DummyLineEdit(),
+        acquisition_session_name_value=DummyLineEdit(),
+        acquisition_session_name_detail=DummyLineEdit(),
+        acquisition_scan_count_value=DummyLineEdit(),
+        acquisition_scan_count_detail=DummyLineEdit(),
+        acquisition_training_state_value=DummyLineEdit(),
+        acquisition_training_state_detail=DummyLineEdit(),
+        acquisition_inference_state_value=DummyLineEdit(),
+        acquisition_inference_state_detail=DummyLineEdit(),
+        nano_endpoint_value=DummyLineEdit(),
+        nano_endpoint_detail=DummyLineEdit(),
+        nano_link_value=DummyLineEdit(),
+        nano_link_detail=DummyLineEdit(),
+        nano_protocol_value=DummyLineEdit(),
+        nano_protocol_detail=DummyLineEdit(),
+        nano_last_action_value=DummyLineEdit(),
+        nano_last_action_detail=DummyLineEdit(),
+        log_recent_value=DummyLineEdit(),
+        log_recent_detail=DummyLineEdit(),
+        log_level_value=DummyLineEdit(),
+        log_level_detail=DummyLineEdit(),
+        result_session_scan_count_value=DummyLineEdit(),
+        result_session_scan_count_detail=DummyLineEdit(),
+        result_stage_value=DummyLineEdit(),
+        result_stage_detail=DummyLineEdit(),
+        result_training_state_value=DummyLineEdit(),
+        result_training_state_detail=DummyLineEdit(),
+        result_difference_value=DummyLineEdit(),
+        result_difference_detail=DummyLineEdit(),
+        overview_session_value=DummyLineEdit(),
+        overview_session_detail=DummyLineEdit(),
+        overview_training_value=DummyLineEdit(),
+        overview_training_detail=DummyLineEdit(),
+        overview_inference_value=DummyLineEdit(),
+        overview_inference_detail=DummyLineEdit(),
+        overview_next_action_value=DummyLineEdit(),
+        overview_next_action_detail=DummyLineEdit(),
+        acquisition_session_context_text=DummyTextBlock(),
+        latest_scan_context_text=DummyTextBlock(),
+        session_stage_context_text=DummyTextBlock(),
+        latest_activity_context_text=DummyTextBlock(),
+        result_difference_context_text=DummyTextBlock(),
+        session_timeline_text=DummyTextBlock(),
+        session_sort_combo=DummyComboBox(["最近活跃优先"]),
+        result_compare_combo=DummyComboBox(["不进行对比"]),
+        result_compare_summary_text=DummyTextBlock(),
+        tab_widget=SimpleNamespace(currentIndex=lambda: 0),
         log=lambda message: None,
+        current_session=SimpleNamespace(label="demo", id="session-1", scan_results=[], training_results=[], inference_results=[]),
     )
 
     controller = StudioRuntimeController(window)
@@ -407,3 +623,181 @@ def test_runtime_controller_disables_actions_when_inputs_missing():
     assert window.train_yolo_btn.enabled is False
     assert window.train_resnet_btn.enabled is False
     assert window.start_inference_btn.enabled is False
+
+
+def test_log_slot_updates_log_snapshot_labels():
+    entries: list[str] = []
+
+    def log_slot(target, message):
+        if hasattr(target, "log_text"):
+            target.log_text.append(message)
+        lowered = message.lower()
+        level = "信息"
+        detail = "普通工作流事件"
+        if "error" in lowered or "failed" in lowered or "失败" in message:
+            level = "错误"
+            detail = "需要优先检查当前步骤"
+        elif "warning" in lowered or "未找到" in message or "请先" in message:
+            level = "提示"
+            detail = "当前流程需要补充前置条件"
+        elif "complete" in lowered or "completed" in lowered or "完成" in message:
+            level = "完成"
+            detail = "可以进入下一阶段或复查结果"
+        elif "connecting" in lowered or "starting" in lowered or "进行中" in message:
+            level = "进行中"
+            detail = "当前任务正在执行"
+        if hasattr(target, "log_recent_value"):
+            target.log_recent_value.setText(message[:48] + ("..." if len(message) > 48 else ""))
+        if hasattr(target, "log_recent_detail"):
+            target.log_recent_detail.setText(detail)
+        if hasattr(target, "log_level_value"):
+            target.log_level_value.setText(level)
+        if hasattr(target, "log_level_detail"):
+            target.log_level_detail.setText(message if len(message) <= 80 else message[:80] + "...")
+
+    dummy = SimpleNamespace(
+        log_text=SimpleNamespace(append=entries.append),
+        log_recent_value=DummyLineEdit(),
+        log_recent_detail=DummyLineEdit(),
+        log_level_value=DummyLineEdit(),
+        log_level_detail=DummyLineEdit(),
+    )
+    log_slot(dummy, "Training complete")
+
+    assert entries == ["Training complete"]
+    assert dummy.log_level_value.text() == "完成"
+    assert "下一阶段" in dummy.log_recent_detail.text()
+
+
+def test_studio_controller_opens_selected_directories(tmp_path: Path, monkeypatch):
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    training_dir = tmp_path / "training"
+    training_dir.mkdir()
+    inference_dir = tmp_path / "inference"
+    inference_dir.mkdir()
+    result_dir = tmp_path / "result"
+    result_dir.mkdir()
+    result_png = result_dir / "scan.png"
+    result_png.write_text("png", encoding="utf-8")
+
+    session = SimpleNamespace(
+        id="session-1",
+        label="demo-session",
+        path=str(session_dir),
+        scan_results=[],
+        inference_results=[SimpleNamespace(output_dir="", actual_output_dir=str(inference_dir), images=["scan.png"])],
+        training_results=[SimpleNamespace(output_dir=str(training_dir))],
+    )
+    scan_result = SimpleNamespace(saved=[{"png": str(result_png)}], raw={})
+    session.scan_results = [scan_result]
+
+    opened_paths: list[str] = []
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr("app.windows.studio_controller.os.startfile", lambda path: opened_paths.append(path), raising=False)
+    monkeypatch.setattr(
+        "app.windows.studio_controller.QMessageBox.warning",
+        lambda *args: warnings.append((args[1], args[2])),
+    )
+
+    session_list = DummyListWidget()
+    session_list.setCurrentRow(0)
+    result_list = DummyListWidget()
+    result_list.setCurrentRow(0)
+
+    session_workflow = DummySessionWorkflowForController()
+    session_workflow.list_sessions = lambda: [session]
+    session_workflow.selected_session = lambda index: session if index == 0 else None
+    session_workflow.selected_scan_result = lambda session_index, result_index: (session, scan_result)
+
+    logs: list[str] = []
+    window = SimpleNamespace(
+        session_workflow_service=session_workflow,
+        session_list=session_list,
+        result_list=result_list,
+        session_search_edit=DummyLineEdit(""),
+        session_sort_combo=DummyComboBox(["最近活跃优先"]),
+        result_compare_combo=DummyComboBox(["不进行对比"]),
+        result_compare_summary_text=DummyTextBlock(),
+        log=logs.append,
+    )
+
+    controller = StudioController(window)
+    controller.open_selected_session_directory()
+    controller.open_selected_training_output()
+    controller.open_selected_inference_output()
+    controller.open_selected_result_directory()
+
+    assert warnings == []
+    assert opened_paths == [
+        str(session_dir),
+        str(training_dir),
+        str(inference_dir),
+        str(result_dir),
+    ]
+    assert logs[-4:] == [
+        f"已打开目录：{session_dir}",
+        f"已打开目录：{training_dir}",
+        f"已打开目录：{inference_dir}",
+        f"已打开目录：{result_dir}",
+    ]
+
+
+def test_studio_controller_reports_missing_directories(monkeypatch):
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.windows.studio_controller.QMessageBox.warning",
+        lambda *args: warnings.append((args[1], args[2])),
+    )
+
+    session_list = DummyListWidget()
+    session_list.setCurrentRow(0)
+    result_list = DummyListWidget()
+    result_list.setCurrentRow(0)
+
+    session_workflow = DummySessionWorkflowForController()
+    session_workflow.list_sessions = lambda: [
+        SimpleNamespace(
+            id="session-1",
+            label="demo-session",
+            path="",
+            scan_results=[],
+            inference_results=[],
+            training_results=[],
+        )
+    ]
+    session_workflow.selected_session = lambda index: SimpleNamespace(
+        id="session-1",
+        label="demo-session",
+        path="",
+        scan_results=[],
+        inference_results=[],
+        training_results=[],
+    )
+    session_workflow.selected_scan_result = lambda session_index, result_index: (None, None)
+
+    logs: list[str] = []
+    window = SimpleNamespace(
+        session_workflow_service=session_workflow,
+        session_list=session_list,
+        result_list=result_list,
+        session_search_edit=DummyLineEdit(""),
+        session_sort_combo=DummyComboBox(["最近活跃优先"]),
+        result_compare_combo=DummyComboBox(["不进行对比"]),
+        result_compare_summary_text=DummyTextBlock(),
+        log=logs.append,
+    )
+
+    controller = StudioController(window)
+    controller.open_selected_session_directory()
+    controller.open_selected_training_output()
+    controller.open_selected_inference_output()
+    controller.open_selected_result_directory()
+
+    assert [message for _, message in warnings] == [
+        "当前会话目录暂不可用。",
+        "当前会话还没有训练输出目录。",
+        "当前会话还没有推理输出目录。",
+        "当前结果还没有导出目录。",
+    ]
+    assert logs == [message for _, message in warnings]

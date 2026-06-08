@@ -79,7 +79,7 @@ def test_training_workflow_service_prepares_yolo_plan_and_context(tmp_path: Path
     assert Path(plan.data_yaml_path).exists()
     assert plan.img_size >= 320
     assert training_manager.calls
-    assert any("Generated data config" in message for message in logs)
+    assert any("已生成数据配置" in message for message in logs)
 
 
 def test_training_workflow_service_prepares_resnet_plan_from_annotations(tmp_path: Path):
@@ -103,7 +103,7 @@ def test_training_workflow_service_prepares_resnet_plan_from_annotations(tmp_pat
     assert plan is not None
     assert plan.saving_path.endswith("resnet_train")
     assert Path(plan.saving_path).exists()
-    assert any("Cropped" in message for message in logs)
+    assert any("已裁剪" in message for message in logs)
 
 
 def test_training_workflow_service_validates_annotation_training_data():
@@ -113,9 +113,9 @@ def test_training_workflow_service_validates_annotation_training_data():
 
     empty_state = AnnotationState(images=[], annotations={}, class_names=["0"], current_index=0)
     assert workflow.validate_annotation_training_data(empty_state, annotation_service, logs.append) is False
-    assert logs[-1] == "Error: load training images first"
+    assert logs[-1] == "错误：请先加载训练图像"
 
     logs.clear()
     image_state = AnnotationState(images=["a.png"], annotations={"a.png": []}, class_names=["0"], current_index=0)
     assert workflow.validate_annotation_training_data(image_state, annotation_service, logs.append) is False
-    assert logs[-1] == "Error: load or create annotations first"
+    assert logs[-1] == "错误：请先加载或创建标注"

@@ -88,7 +88,7 @@ def test_resource_loader_service_loads_resources_and_validates_dataset(tmp_path:
     assert resnet_target.value == "model.pth"
     assert classes_target.value == "classes.yaml"
     assert dataset_target.value == str(dataset_dir)
-    assert "Loaded YOLO model: model.pt" in logs
-    assert "Loaded ResNet model: model.pth" in logs
-    assert "Loaded classes YAML: classes.yaml" in logs
-    assert f"Loaded ResNet dataset: {dataset_dir}" in logs
+    assert "已加载检测模型：model.pt" in logs
+    assert "已加载分类模型：model.pth" in logs
+    assert "已加载类别文件：classes.yaml" in logs
+    assert f"已加载分类数据：{dataset_dir}" in logs

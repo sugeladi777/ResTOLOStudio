@@ -76,7 +76,7 @@ def test_training_runner_service_runs_resnet_and_emits_callbacks(monkeypatch):
     finally:
         sys.argv = original_argv
 
-    assert any("Starting ResNet training" in line for line in logs)
-    assert any("Class imbalance handling: enabled" in line for line in logs)
+    assert any("开始训练分类模型" in line for line in logs)
+    assert any("类别不平衡处理：开启" in line for line in logs)
     assert progress == [(1, 5), (2, 5)]
     assert losses[-1] == (2, 0.3, 0.1)

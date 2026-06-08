@@ -1,4 +1,4 @@
-name: restolo-py310
+name: restolo
 channels:
   - pytorch
   - nvidia
@@ -21,5 +21,6 @@ dependencies:
   - torchvision=0.20.*
   - pytorch-cuda=12.1
   - pip:
+      - pytest
       - pycocotools
       - thop

@@ -29,8 +29,16 @@ def test_session_workflow_service_manages_selection_and_labels(tmp_path: Path):
     assert len(sessions) == 1
     assert workflow.selected_session(0).id == session.id
     assert workflow.selected_session(9) is None
-    assert workflow.result_labels(sessions[0]) == ["scan_a", "scan_b"]
-    assert workflow.session_list_labels() == [f"{session.id} | scan=2 | infer=1"]
+    result_labels = workflow.result_labels(sessions[0])
+    assert "scan_a" in result_labels[0]
+    assert "导出 0 个文件" in result_labels[0]
+    assert "scan_b" in result_labels[1]
+    session_labels = workflow.session_list_labels()
+    assert len(session_labels) == 1
+    assert "demo" in session_labels[0]
+    assert "结果复查" in session_labels[0]
+    assert "扫描 2 组" in session_labels[0]
+    assert workflow.session_list_labels(sessions) == session_labels
     assert "scan_b" in workflow.result_detail(sessions[0], 1)
     assert workflow.result_detail(sessions[0], 9) == ""
 

@@ -24,9 +24,9 @@ class StudioTrainingController:
         return AppPaths.from_project_root(Path(__file__).resolve().parents[2])
 
     def _choose_training_project_dir(self):
-        project_dir = QFileDialog.getExistingDirectory(self.window, "Select training output directory")
+        project_dir = QFileDialog.getExistingDirectory(self.window, "选择训练输出目录")
         if not project_dir:
-            self.window.log("Training cancelled")
+            self.window.log("已取消训练")
             return None
         return project_dir
 
@@ -53,8 +53,7 @@ class StudioTrainingController:
         self.window.disable_controls()
 
     def _start_background_training(self, target) -> None:
-        train_thread = threading.Thread(target=target, daemon=True)
-        train_thread.start()
+        threading.Thread(target=target, daemon=True).start()
 
     def _training_parameters(self) -> tuple[int, int]:
         return self.window.epochs_spin.value(), self.window.batch_spin.value()
@@ -134,12 +133,12 @@ class StudioTrainingController:
                 project_dir=project_dir,
             )
         except Exception as exc:  # noqa: BLE001
-            error_msg = f"Training failed: {exc}"
+            error_msg = f"训练失败：{exc}"
             self.window.log(error_msg)
-            QMessageBox.warning(self.window, "Training Failed", error_msg)
+            QMessageBox.warning(self.window, "训练失败", error_msg)
 
     def train_yolo(self) -> None:
-        self.window.log("Starting YOLO training...")
+        self.window.log("开始训练检测模型...")
         if not self._has_annotation_training_data():
             return
 
@@ -163,14 +162,12 @@ class StudioTrainingController:
             return
 
         img_size = plan.img_size
-        self.window.log(f"Auto-detected img_size: {img_size}")
-        self.window.log(
-            f"Training params: epochs={epochs}, batch_size={batch_size}, img_size={img_size}, device={device}"
-        )
+        self.window.log(f"自动识别图像尺寸：{img_size}")
+        self.window.log(f"训练参数：轮数={epochs}，批大小={batch_size}，图像尺寸={img_size}，设备={device}")
 
         self._prepare_training_ui()
         yolo_model_path = self.window.train_yolo_model_path.text() or str(self._app_paths().default_yolo_model_path)
-        self.window.log("YOLO training started, check terminal output for details")
+        self.window.log("检测模型训练已启动，请查看终端输出。")
         self._ensure_yolo_loss_dialog()
         self._start_background_training(
             lambda: self._run_yolo_training_job(
@@ -218,26 +215,27 @@ class StudioTrainingController:
                     ),
                 ),
             )
-            self.window.log("ResNet training complete")
+            self.window.log("分类模型训练完成")
             self.window.training_finished_signal.emit()
         except Exception as exc:  # noqa: BLE001
             import traceback
 
-            error_msg = f"Training failed: {exc}\n{traceback.format_exc()}"
+            error_msg = f"训练失败：{exc}\n{traceback.format_exc()}"
             self.window.log(error_msg)
             self.window.training_error_signal.emit(str(exc))
-            QMessageBox.warning(self.window, "Training Failed", error_msg)
+            QMessageBox.warning(self.window, "训练失败", error_msg)
         finally:
             self.window.enable_controls()
 
     def train_resnet(self) -> None:
-        self.window.log("Starting ResNet training...")
+        self.window.log("开始训练分类模型...")
         if not self._has_resnet_source():
             return
 
         project_dir = self._choose_training_project_dir()
         if not project_dir:
             return
+
         self.window._resnet_project_dir = project_dir
         self._prepare_training_context("resnet", project_dir)
         selected_class_indices = self._selected_class_indices()
@@ -266,4 +264,4 @@ class StudioTrainingController:
                 batch_size,
             )
         )
-        self.window.log("ResNet training started, check terminal output for details")
+        self.window.log("分类模型训练已启动，请查看终端输出。")
