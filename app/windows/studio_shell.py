@@ -59,52 +59,10 @@ def _build_hidden_runtime_panel(window) -> QWidget:
     layout.setSpacing(0)
 
     for attr_name in (
-        "workflow_group",
-        "trajectory_group",
-        "canvas_group",
-        "status_group",
-        "snapshot_group",
-        "log_group",
-    ):
-        group = window.create_group("hidden")
-        group.hide()
-        setattr(window, attr_name, group)
-        layout.addWidget(group)
-
-    for attr_name in (
-        "workflow_focus_detail",
-        "workflow_step_focus_detail",
-        "trajectory_session_value",
-        "trajectory_session_detail",
-        "trajectory_acquisition_value",
-        "trajectory_acquisition_detail",
-        "trajectory_training_value",
-        "trajectory_training_detail",
-        "trajectory_inference_value",
-        "trajectory_inference_detail",
-        "trajectory_next_value",
-        "trajectory_next_detail",
-        "canvas_mode_title",
-        "canvas_mode_hint",
-        "canvas_aux_hint",
         "workspace_mode_detail",
-        "operator_hint_detail",
-        "workspace_images_value",
-        "workspace_images_detail",
-        "workspace_annotations_value",
-        "workspace_annotations_detail",
-        "workspace_inference_queue_value",
-        "workspace_inference_queue_detail",
-        "workspace_session_value",
-        "workspace_session_detail",
-        "log_recent_value",
-        "log_recent_detail",
-        "log_level_value",
-        "log_level_detail",
     ):
         setattr(window, attr_name, QLabel(""))
 
-    window.workflow_step_widgets = {}
     panel.hide()
     return panel
 
