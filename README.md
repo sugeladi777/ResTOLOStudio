@@ -1,28 +1,28 @@
 # ReSTOLO Studio
 
-Unified desktop application for:
+这是一个桌面应用，用于整合以下工作流：
 
-- Nanonis STM control and scan capture
-- ReSTOLO inference, annotation, and training
-- Session-based result management
+- Nanonis STM 控制与扫描采集
+- ReSTOLO 图像推理、标注与训练
+- 基于会话的结果管理
 
-## Run
+## 运行方式
 
 ```powershell
 pip install -r requirements.txt
 python main.py
 ```
 
-## Conda Environment
+## Conda 环境
 
-Recommended environment for this workstation:
+当前工作站推荐环境：
 
 - Python `3.10`
 - PyTorch `2.5.1`
 - CUDA `12.1`
-- GPU verified on `NVIDIA GeForce RTX 4060`
+- 已验证 GPU：`NVIDIA GeForce RTX 4060`
 
-Create and use the environment with:
+创建并使用环境：
 
 ```powershell
 conda env create -f environment.yml
@@ -30,48 +30,50 @@ conda activate restolo-py310
 python main.py
 ```
 
-If the environment already exists, update it with:
+如果环境已经存在，可以更新：
 
 ```powershell
 conda env update -f environment.yml --prune
 ```
 
-## Structure
+## 项目结构
 
-- `main.py`: slim launcher entrypoint
-- `app/bootstrap.py`: application startup and Qt bootstrapping
-- `app/runtime.py`: runtime/service assembly
-- `app/windows/`: top-level application windows
-- `app/windows/studio_window.py`: main studio window entry
-- `app/windows/studio_panels.py`: acquisition and results panel assembly
-- `app/windows/studio_actions.py`: window-level actions for Nanonis, sessions, and inference
-- `app/windows/__init__.py`: exports the public studio window entrypoints
-- `app/legacy/`: explicit boundary for historical base UI
-- `app/legacy/workbench_impl.py`: thin legacy shell that now delegates layout and behavior to focused modules
-- `app/legacy/workbench_ui.py`: extracted legacy UI theme and widget helpers shared by the base window
-- `app/legacy/workbench_layout.py`: extracted legacy window construction and widget layout assembly
-- `app/legacy/workbench_data.py`: extracted legacy data loading, SXM conversion, annotation, and model-loading helpers
-- `app/legacy/workbench_training.py`: extracted legacy YOLO and ResNet training workflow helpers
-- `app/legacy/workbench_runtime.py`: extracted legacy UI state switching and training/inference callback helpers
-- `app/legacy/workbench_state.py`: extracted legacy tab-state and button-state logic
-- `app/legacy/workbench_bindings.py`: centralizes legacy method binding so the base shell file stays smaller
-- `app/services/__init__.py`, `app/ui/__init__.py`, `app/utils/__init__.py`: re-export the package-level public API instead of leaving empty shells
-- `app/core/`: application-level paths and core primitives
-- `app/core/paths.py`: single source of truth for bundled assets, sessions, config, and YOLO resource files
-- `app/`: PyQt5 application and services
-- `assets/`: bundled application resources separated from source code
-- `assets/models/`: local model directory for detection/classification weights and `classes.yaml`
-- `assets/config/error_patterns.yaml`: user-facing error matching rules
-- `nanonis/`: Nanonis TCP backend
-- `ml/`: YOLO / ResNet training and inference logic
-- `ml/models/yolov5m_molecule.yaml`: retained custom YOLO architecture used by the desktop training flow
-- `sessions/`: scan, inference, and training outputs
+- `main.py`：精简启动入口
+- `app/bootstrap.py`：应用启动与 Qt 装配
+- `app/runtime.py`：运行时与服务装配
+- `app/windows/`：顶层窗口层
+- `app/windows/studio_window.py`：主窗口入口
+- `app/windows/studio_panels.py`：采集与结果面板
+- `app/windows/studio_actions.py`：窗口级操作逻辑，包括 Nanonis、会话与推理
+- `app/windows/__init__.py`：窗口层对外导出入口
+- `app/legacy/`：历史 UI 与旧流程边界
+- `app/legacy/workbench_impl.py`：精简后的 legacy 壳类
+- `app/legacy/workbench_ui.py`：legacy 主题与通用控件辅助
+- `app/legacy/workbench_layout.py`：legacy 主窗口布局构建
+- `app/legacy/workbench_data.py`：数据加载、SXM 转换、标注与模型加载相关逻辑
+- `app/legacy/workbench_training.py`：YOLO 与 ResNet 训练流程辅助
+- `app/legacy/workbench_runtime.py`：训练/推理运行时回调与界面状态处理
+- `app/legacy/workbench_state.py`：标签页切换与按钮状态逻辑
+- `app/legacy/workbench_bindings.py`：集中管理 legacy 方法绑定
+- `app/services/`：运行时服务层
+- `app/ui/`：可复用界面组件
+- `app/utils/`：工具与管理器
+- `app/core/`：核心路径与基础对象
+- `app/core/paths.py`：统一管理资源目录、会话目录、配置文件与 YOLO 相关资源路径
+- `assets/`：与源码分离的本地资源目录
+- `assets/models/`：本地模型目录，用于存放检测/分类权重和 `classes.yaml`
+- `assets/config/error_patterns.yaml`：错误模式匹配配置
+- `nanonis/`：Nanonis TCP 后端
+- `ml/`：YOLO / ResNet 训练与推理逻辑
+- `ml/models/yolov5m_molecule.yaml`：当前桌面训练流程使用的 YOLO 结构配置
+- `sessions/`：扫描、推理和训练输出目录
 
-## Repository Hygiene
+## 仓库约定
 
-- runtime cache directories such as `__pycache__/` are not kept in the repository
-- IDE metadata such as `.vs/`, `.suo`, and workspace index files are not kept in the repository
-- training artifacts are not kept under source directories
-- upstream deployment helpers that are not part of the desktop app workflow are removed instead of being carried in-tree
-- optional upstream experiment-tracking integrations are reduced to local no-op compatibility when the desktop app does not use them
-- `sessions/` is treated as runtime output and should be recreated locally instead of versioned
+- `__pycache__/` 等运行缓存不纳入版本控制
+- `.vs/`、`.suo` 等 IDE 元数据不纳入版本控制
+- 训练产物不保留在源码目录下
+- 不属于桌面应用工作流的上游部署辅助文件会被移除
+- 当前桌面应用不会使用的可选实验跟踪能力会降级为本地兼容空实现
+- `sessions/` 视为运行输出目录，本地生成，不纳入仓库
+- 本地大模型权重默认不纳入仓库，按需自行放入 `assets/models/`
