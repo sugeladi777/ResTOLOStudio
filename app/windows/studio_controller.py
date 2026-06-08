@@ -200,6 +200,26 @@ class StudioController:
                 return path
         return None
 
+    def _set_result_preview_placeholder(self, message: str, caption: str | None = None) -> None:
+        preview_label = getattr(self.window, "result_preview_label", None)
+        if preview_label is None:
+            return
+        preview_label.clear()
+        preview_label.setText(message)
+        preview_caption = getattr(self.window, "result_preview_caption", None)
+        if preview_caption is not None and caption is not None:
+            preview_caption.setText(caption)
+
+    def _set_compare_preview_placeholder(self, message: str, caption: str | None = None) -> None:
+        compare_label = getattr(self.window, "result_compare_preview_label", None)
+        if compare_label is None:
+            return
+        compare_label.clear()
+        compare_label.setText(message)
+        compare_caption = getattr(self.window, "result_compare_preview_caption", None)
+        if compare_caption is not None and caption is not None:
+            compare_caption.setText(caption)
+
     def _update_compare_preview(self) -> None:
         compare_label = getattr(self.window, "result_compare_preview_label", None)
         compare_caption = getattr(self.window, "result_compare_preview_caption", None)
@@ -212,27 +232,21 @@ class StudioController:
         results = getattr(session, "scan_results", []) or []
         current_index = self.window.result_list.currentRow()
         if compare_index < 0 or compare_index >= len(results) or compare_index == current_index:
-            compare_label.clear()
-            compare_label.setText("未选择对比结果")
-            if compare_caption is not None:
-                compare_caption.setText("选择对比结果后，这里会显示另一条结果的预览。")
+            self._set_compare_preview_placeholder("未选择对比结果", "选择对比结果后，这里会显示另一条结果的预览。")
             return
 
         other = results[compare_index]
         preview_path = self._preview_path_from_result(other)
         if not preview_path:
-            compare_label.clear()
-            compare_label.setText("对比结果没有可预览图像")
-            if compare_caption is not None:
-                compare_caption.setText(f"对比结果：{getattr(other, 'label', '未命名')}")
+            self._set_compare_preview_placeholder(
+                "对比结果没有可预览图像",
+                f"对比结果：{getattr(other, 'label', '未命名')}",
+            )
             return
 
         pixmap = QPixmap(preview_path)
         if pixmap.isNull():
-            compare_label.clear()
-            compare_label.setText("对比预览加载失败")
-            if compare_caption is not None:
-                compare_caption.setText(os.path.basename(preview_path))
+            self._set_compare_preview_placeholder("对比预览加载失败", os.path.basename(preview_path))
             return
 
         compare_label.setPixmap(pixmap.scaled(420, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation))
@@ -278,27 +292,21 @@ class StudioController:
 
     def _update_result_preview(self, result: ScanResultRecord | None) -> None:
         preview_label = getattr(self.window, "result_preview_label", None)
-        preview_caption = getattr(self.window, "result_preview_caption", None)
         if preview_label is None:
             return
 
         preview_path = self._preview_path_from_result(result)
         if not preview_path:
-            preview_label.clear()
-            preview_label.setText("当前结果没有可预览图像")
-            if preview_caption is not None:
-                preview_caption.setText("如结果包含导出图像，这里会自动显示第一张。")
+            self._set_result_preview_placeholder("当前结果没有可预览图像", "如结果包含导出图像，这里会自动显示第一张。")
             return
 
         pixmap = QPixmap(preview_path)
         if pixmap.isNull():
-            preview_label.clear()
-            preview_label.setText("预览加载失败")
-            if preview_caption is not None:
-                preview_caption.setText(os.path.basename(preview_path))
+            self._set_result_preview_placeholder("预览加载失败", os.path.basename(preview_path))
             return
 
         preview_label.setPixmap(pixmap.scaled(420, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        preview_caption = getattr(self.window, "result_preview_caption", None)
         if preview_caption is not None:
             preview_caption.setText(f"当前预览：{os.path.basename(preview_path)}")
 
