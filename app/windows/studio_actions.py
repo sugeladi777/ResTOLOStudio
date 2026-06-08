@@ -54,18 +54,31 @@ class StudioActionsMixin:
     def _scan_channels(self) -> list[str]:
         return [part.strip() for part in self.scan_channels_edit.text().split(",") if part.strip()]
 
+    def _scan_geometry(self) -> dict:
+        return {
+            "width_nm": float(self.scan_width_edit.text().strip()),
+            "height_nm": float(self.scan_height_edit.text().strip()),
+            "center_x_nm": 0.0,
+            "center_y_nm": 0.0,
+            "angle_deg": 0.0,
+            "pixels": int(self.scan_pixels_edit.text().strip()),
+            "channels": self._scan_channels(),
+        }
+
+    def _all_sessions(self) -> list[dict]:
+        return self.result_store.list_sessions()
+
+    def _selected_session(self) -> dict | None:
+        sessions = self._all_sessions()
+        session_index = self.session_list.currentRow()
+        if session_index < 0 or session_index >= len(sessions):
+            return None
+        return sessions[session_index]
+
     def apply_nanonis_scan(self):
         self._run_service(
             "apply_scan",
-            lambda: self.nanonis_service.apply_scan(
-                width_nm=float(self.scan_width_edit.text().strip()),
-                height_nm=float(self.scan_height_edit.text().strip()),
-                center_x_nm=0.0,
-                center_y_nm=0.0,
-                angle_deg=0.0,
-                pixels=int(self.scan_pixels_edit.text().strip()),
-                channels=self._scan_channels(),
-            ),
+            lambda: self.nanonis_service.apply_scan(**self._scan_geometry()),
         )
 
     def _new_session(self) -> dict:
@@ -80,13 +93,7 @@ class StudioActionsMixin:
             "scan_and_save",
             lambda: self.nanonis_service.scan_and_save(
                 label=session["id"],
-                width_nm=float(self.scan_width_edit.text().strip()),
-                height_nm=float(self.scan_height_edit.text().strip()),
-                center_x_nm=0.0,
-                center_y_nm=0.0,
-                angle_deg=0.0,
-                pixels=int(self.scan_pixels_edit.text().strip()),
-                channels=self._scan_channels(),
+                **self._scan_geometry(),
             ),
         )
 
@@ -98,13 +105,7 @@ class StudioActionsMixin:
             "scan_pulse_scan",
             lambda: self.workflow_service.scan_pulse_scan(
                 label=session["id"],
-                width_nm=float(self.scan_width_edit.text().strip()),
-                height_nm=float(self.scan_height_edit.text().strip()),
-                center_x_nm=0.0,
-                center_y_nm=0.0,
-                angle_deg=0.0,
-                pixels=int(self.scan_pixels_edit.text().strip()),
-                channels=self._scan_channels(),
+                **self._scan_geometry(),
                 pulse_bias_v=float(self.pulse_bias_edit.text().strip()),
                 pulse_width_s=float(self.pulse_width_edit.text().strip()),
             ),
@@ -137,12 +138,10 @@ class StudioActionsMixin:
         self.disable_controls()
 
     def use_selected_result_for_inference(self):
-        session_index = self.session_list.currentRow()
         result_index = self.result_list.currentRow()
-        sessions = self.result_store.list_sessions()
-        if session_index < 0 or session_index >= len(sessions):
+        session = self._selected_session()
+        if session is None:
             return
-        session = sessions[session_index]
         results = session.get("scan_results", [])
         if result_index < 0 or result_index >= len(results):
             return
@@ -174,7 +173,7 @@ class StudioActionsMixin:
             self.pending_inference_output_dir = None
 
     def reload_sessions(self):
-        sessions = self.result_store.list_sessions()
+        sessions = self._all_sessions()
         self.session_list.clear()
         for session in sessions:
             self.session_list.addItem(
@@ -184,9 +183,9 @@ class StudioActionsMixin:
             self.session_list.setCurrentRow(0)
 
     def _session_selected(self, index: int):
-        sessions = self.result_store.list_sessions()
         self.result_list.clear()
         self.result_detail_text.clear()
+        sessions = self._all_sessions()
         if index < 0 or index >= len(sessions):
             return
         session = sessions[index]
@@ -194,11 +193,9 @@ class StudioActionsMixin:
             self.result_list.addItem(item.get("label", "scan_result"))
 
     def _result_selected(self, index: int):
-        sessions = self.result_store.list_sessions()
-        session_index = self.session_list.currentRow()
-        if session_index < 0 or session_index >= len(sessions):
+        session = self._selected_session()
+        if session is None:
             return
-        session = sessions[session_index]
         results = session.get("scan_results", [])
         if index < 0 or index >= len(results):
             return
