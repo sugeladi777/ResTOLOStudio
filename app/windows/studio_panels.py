@@ -1,31 +1,8 @@
 from __future__ import annotations
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QHBoxLayout, QListWidget, QTextEdit, QToolButton, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QHBoxLayout, QListWidget, QTextEdit, QVBoxLayout, QWidget
 
-
-def _create_collapsible_section(title: str, content: QWidget, expanded: bool = False) -> QWidget:
-    container = QWidget()
-    layout = QVBoxLayout(container)
-    layout.setContentsMargins(0, 0, 0, 0)
-    layout.setSpacing(4)
-
-    toggle = QToolButton()
-    toggle.setText(title)
-    toggle.setCheckable(True)
-    toggle.setChecked(expanded)
-    toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-    toggle.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
-    content.setVisible(expanded)
-
-    def _toggle(checked: bool) -> None:
-        toggle.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
-        content.setVisible(checked)
-
-    toggle.toggled.connect(_toggle)
-    layout.addWidget(toggle)
-    layout.addWidget(content)
-    return container
+from app.windows.studio_shell import _create_collapsible_section
 
 
 class StudioPanelsMixin:
