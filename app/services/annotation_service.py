@@ -33,20 +33,6 @@ class AnnotationService:
                 used.add(box.cls)
         return used
 
-    def class_names_for_used_classes(self, state: AnnotationState) -> list[str]:
-        used = self.used_classes(state)
-        if not used:
-            return []
-
-        max_class = max(used)
-        class_names = []
-        for index in range(max_class + 1):
-            if index < len(state.class_names):
-                class_names.append(state.class_names[index])
-            else:
-                class_names.append(str(index))
-        return class_names
-
     def annotated_images(self, state: AnnotationState) -> list[str]:
         return [image_path for image_path in state.images if state.annotations.get(image_path)]
 
