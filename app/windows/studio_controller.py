@@ -282,6 +282,14 @@ class StudioController:
     def _confirm(self, title: str, message: str) -> bool:
         return QMessageBox.question(self.window, title, message) == QMessageBox.Yes
 
+    def _choose_file(self, title: str, file_filter: str) -> str:
+        file_path, _ = QFileDialog.getOpenFileName(self.window, title, "", file_filter)
+        return file_path
+
+    def _refresh_buttons_if(self, loaded: bool) -> None:
+        if loaded:
+            self.window.update_button_states()
+
     def _new_session(self) -> SessionRecord:
         self.window.current_session = self.window.acquisition_workflow_service.start_scan_session(
             getattr(self.window, "current_session", None),
@@ -539,12 +547,7 @@ class StudioController:
         self.window.log(f"分类裁剪完成，共生成 {crop_summary.crop_count} 张")
 
     def load_yolo_model(self) -> None:
-        file_path, _ = QFileDialog.getOpenFileName(
-            self.window,
-            "选择检测模型",
-            "",
-            "模型文件 (*.pt *.pth)",
-        )
+        file_path = self._choose_file("选择检测模型", "模型文件 (*.pt *.pth)")
         loaded = self.window.resource_loader_service.load_yolo_model(
             file_path,
             self.window.model_manager,
@@ -552,8 +555,7 @@ class StudioController:
             getattr(self.window, "train_yolo_model_path", None),
             getattr(self.window, "infer_yolo_model_path", None),
         )
-        if loaded:
-            self.window.update_button_states()
+        self._refresh_buttons_if(loaded)
 
     def load_resnet_data(self) -> None:
         directory = QFileDialog.getExistingDirectory(self.window, "选择分类数据目录")
@@ -562,32 +564,20 @@ class StudioController:
             self.window.log,
             getattr(self.window, "train_resnet_data_path", None),
         )
-        if loaded:
-            self.window.update_button_states()
+        self._refresh_buttons_if(loaded)
 
     def load_classes_yaml(self) -> None:
-        file_path, _ = QFileDialog.getOpenFileName(
-            self.window,
-            "选择类别文件",
-            "",
-            "YAML 文件 (*.yaml)",
-        )
+        file_path = self._choose_file("选择类别文件", "YAML 文件 (*.yaml)")
         loaded = self.window.resource_loader_service.load_classes_file(
             file_path,
             self.window.log,
             getattr(self.window, "train_classes_path", None),
             getattr(self.window, "infer_classes_path", None),
         )
-        if loaded:
-            self.window.update_button_states()
+        self._refresh_buttons_if(loaded)
 
     def load_resnet_model(self) -> None:
-        file_path, _ = QFileDialog.getOpenFileName(
-            self.window,
-            "选择分类模型",
-            "",
-            "模型文件 (*.saving *.pt *.pth)",
-        )
+        file_path = self._choose_file("选择分类模型", "模型文件 (*.saving *.pt *.pth)")
         loaded = self.window.resource_loader_service.load_resnet_model(
             file_path,
             self.window.model_manager,
@@ -595,8 +585,7 @@ class StudioController:
             getattr(self.window, "train_resnet_model_path", None),
             getattr(self.window, "infer_resnet_model_path", None),
         )
-        if loaded:
-            self.window.update_button_states()
+        self._refresh_buttons_if(loaded)
 
     def load_classes_file(self) -> None:
         self.load_classes_yaml()
