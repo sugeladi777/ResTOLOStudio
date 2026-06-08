@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 
 from app.core import AppPaths
 from app.services.training_runner_service import ResnetTrainingCallbacks, TrainingRunnerService

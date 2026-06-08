@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
-
 from app.core import InferenceResultRecord, ScanResultRecord
 from app.services.inference_service import InferenceService
 from app.services.inference_workflow_service import InferenceWorkflowService

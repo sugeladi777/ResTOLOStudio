@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
-
 from PIL import Image
 
 from app.core import AnnotationBox, AnnotationState, SessionRecord

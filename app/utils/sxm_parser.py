@@ -12,7 +12,6 @@ SXM文件格式：
 - SCAN_OFFSET: 扫描偏移 (x, y)，单位：米
 - DATA_INFO: 通道信息（通道号、名称、单位、方向、校准值、偏移）
 """
-import struct
 import numpy as np
 from PIL import Image
 from matplotlib.colors import LinearSegmentedColormap

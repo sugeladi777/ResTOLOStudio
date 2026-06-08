@@ -13,9 +13,9 @@ ReSTOLO Studio is a desktop application for STM-oriented workflows:
 - `app/bootstrap.py`: creates `QApplication`, runtime, and main window
 - `app/core/`: shared primitives such as project paths and session/result models
 - `app/runtime.py`: shared runtime services and project paths
-- `app/windows/`: current studio window, acquisition panel, results panel, studio controller, training controller, runtime controller, and studio shell
-- `app/windows/training_controller.py`: studio-owned YOLO / ResNet training workflows migrated out of legacy
-- `app/windows/runtime_controller.py`: studio-owned runtime callbacks and UI state updates migrated out of legacy
+- `app/windows/`: studio window, acquisition panel, results panel, studio controller, training controller, runtime controller, and studio shell
+- `app/windows/training_controller.py`: studio-owned YOLO / ResNet training workflows
+- `app/windows/runtime_controller.py`: studio-owned runtime callbacks and UI state updates
 - `app/services/`: application services such as config, annotation state/file IO, acquisition workflows, image loading workflows, inference, resource loading, session/result workflows, training workflows, training runners, SXM conversion, dataset preparation, and training job persistence
 - `app/ui/`: reusable Qt widgets such as the annotation tool and loss dialog; widgets should focus on interaction/presentation rather than file IO
 - `app/utils/`: model, training, inference, error matching, and SXM parsing helpers
@@ -24,9 +24,7 @@ ReSTOLO Studio is a desktop application for STM-oriented workflows:
 - `assets/`: default models, classes, and app config assets
 - `sessions/`: generated scan, training, and inference outputs
 
-## Refactor status
-
-The old `app/legacy/` implementation has been retired from the active application structure.
+## Architecture notes
 
 The project now uses a clearer modular architecture:
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import threading
 
 from PyQt5.QtWidgets import QCheckBox, QFileDialog, QMessageBox

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from app.core import AnnotationBox, AnnotationState, ScanResultRecord
+from app.core import AnnotationBox, AnnotationState
 from app.runtime import AppRuntime
 
 
