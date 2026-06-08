@@ -27,6 +27,30 @@ def _app_paths(window):
     return DEFAULT_APP_PATHS
 
 
+def _choose_training_project_dir(window):
+    project_dir = QFileDialog.getExistingDirectory(window, "选择训练结果保存目录")
+    if not project_dir:
+        window.log("训练取消")
+        return None
+    return project_dir
+
+
+def _has_annotation_training_data(window):
+    if not getattr(window.annotation_tool, "images", None):
+        window.log("错误: 请先加载训练图片")
+        return False
+    if not getattr(window.annotation_tool, "annotations", None):
+        window.log("错误: 请先加载或创建标注")
+        return False
+    return True
+
+
+def _prepare_training_ui(window):
+    window.progress_bar.show()
+    window.progress_bar.setValue(0)
+    window.disable_controls()
+
+
 def _annotated_images(window):
     images = []
     for image_path in getattr(window.annotation_tool, "images", []):
@@ -126,11 +150,7 @@ def _split_yolo_dataset(window, temp_dir, annotated_images):
 
 def train_yolo(window):
     window.log("开始训练 YOLO 模型...")
-    if not getattr(window.annotation_tool, "images", None):
-        window.log("错误: 请先加载训练图片")
-        return
-    if not getattr(window.annotation_tool, "annotations", None):
-        window.log("错误: 请先加载或创建标注")
+    if not _has_annotation_training_data(window):
         return
 
     epochs = window.epochs_spin.value()
@@ -141,9 +161,8 @@ def train_yolo(window):
     img_size = _optimal_img_size(annotated_images)
     window.log(f"自动识别的 img_size: {img_size}")
 
-    project_dir = QFileDialog.getExistingDirectory(window, "选择训练结果保存目录")
+    project_dir = _choose_training_project_dir(window)
     if not project_dir:
-        window.log("训练取消")
         return
 
     window._yolo_project_dir = project_dir
@@ -174,9 +193,7 @@ def train_yolo(window):
     window.log(f"类别数量: {len(class_names)}")
     window.log(f"训练参数: epochs={epochs}, batch_size={batch_size}, img_size={img_size}, device={device}")
 
-    window.progress_bar.show()
-    window.progress_bar.setValue(0)
-    window.disable_controls()
+    _prepare_training_ui(window)
 
     app_paths = _app_paths(window)
     yolo_model_path = window.train_yolo_model_path.text() or str(app_paths.default_yolo_model_path)
@@ -469,9 +486,8 @@ def train_resnet(window):
             window.log("错误: 请先加载或创建标注")
             return
 
-    project_dir = QFileDialog.getExistingDirectory(window, "选择训练结果保存目录")
+    project_dir = _choose_training_project_dir(window)
     if not project_dir:
-        window.log("训练取消")
         return
     window._resnet_project_dir = project_dir
 
@@ -482,9 +498,7 @@ def train_resnet(window):
     saving_path = os.path.join(project_dir, "resnet_train")
     os.makedirs(saving_path, exist_ok=True)
 
-    window.progress_bar.show()
-    window.progress_bar.setValue(0)
-    window.disable_controls()
+    _prepare_training_ui(window)
 
     epochs = window.epochs_spin.value()
     batch_size = window.batch_spin.value()

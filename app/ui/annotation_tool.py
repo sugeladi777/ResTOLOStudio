@@ -4,6 +4,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QPoint
 import cv2
 import numpy as np
 import os
+from pathlib import Path
 
 BASE_COLOR = "#5AE54A"
 HIGHLIGHT_COLOR = "#D3FF9E"
@@ -403,6 +404,91 @@ class AnnotationTool(QWidget):
             font_thickness,
         )
 
+    def _parse_annotation_file(self, ann_path):
+        boxes = []
+        with open(ann_path, "r", encoding="utf-8") as f:
+            for line in f:
+                parts = line.strip().split()
+                if not parts or (len(parts) >= 2 and parts[0] == "["):
+                    continue
+                if len(parts) >= 5:
+                    cls = int(parts[0])
+                    x = float(parts[1])
+                    y = float(parts[2])
+                    w = float(parts[3])
+                    h = float(parts[4])
+                    boxes.append((cls, x, y, w, h))
+        return boxes
+
+    def _match_annotation_image(self, ann_path):
+        for ext in (".jpg", ".jpeg", ".png", ".bmp"):
+            image_path = os.path.splitext(ann_path)[0] + ext
+            if image_path in self.images:
+                return image_path
+
+        base_name = os.path.basename(ann_path)
+        prefix = os.path.splitext(base_name)[0]
+        for image_path in self.images:
+            if os.path.basename(image_path).startswith(prefix):
+                return image_path
+        return None
+
+    def _ensure_output_directory(self, directory):
+        if not directory:
+            return None
+
+        output_dir = Path(directory)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return output_dir
+
+    def _write_annotation_file(self, output_dir, image_path, boxes):
+        ann_path = output_dir / f"{Path(image_path).stem}.txt"
+        with ann_path.open("w", encoding="utf-8") as f:
+            for box in boxes:
+                if len(box) >= 5:
+                    cls, x, y, w, h = box
+                    f.write(f"{cls} {x} {y} {w} {h}\n")
+        return ann_path
+
+    def _write_classes_yaml(self, output_dir):
+        import yaml
+
+        used_classes = set()
+        for boxes in self.annotations.values():
+            for box in boxes:
+                if len(box) >= 1:
+                    used_classes.add(box[0])
+
+        used_class_names = [self.class_names[cls] for cls in sorted(used_classes)]
+        classes_path = output_dir / "classes.yaml"
+        classes_info = {
+            "names": used_class_names,
+            "nc": len(used_class_names),
+        }
+        with classes_path.open("w", encoding="utf-8") as f:
+            yaml.dump(classes_info, f, default_flow_style=False, allow_unicode=True)
+        return classes_path, used_class_names
+
+    def _load_image_array(self, image_path):
+        from PIL import Image
+
+        try:
+            pil_image = Image.open(image_path)
+            if pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
+            return np.array(pil_image)
+        except Exception as exc:
+            _debug(f"使用PIL读取图片失败: {exc}")
+
+        try:
+            image = cv2.imread(image_path)
+            if image is not None:
+                return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        except Exception as exc:
+            _debug(f"使用cv2读取图片失败: {exc}")
+
+        return None
+
     def load_images(self, image_paths):
         """加载图片"""
         self.images = image_paths
@@ -423,137 +509,36 @@ class AnnotationTool(QWidget):
     def load_annotations(self, annotation_paths):
         """加载标注文件"""
         for ann_path in annotation_paths:
-            image_exts = [".jpg", ".jpeg", ".png", ".bmp"]
-            found = False
-
-            for ext in image_exts:
-                image_path = os.path.splitext(ann_path)[0] + ext
-                if image_path in self.images:
-                    _debug(f"找到匹配的图片: {image_path}")
-                    with open(ann_path, 'r') as f:
-                        lines = f.readlines()
-                        boxes = []
-                        for line in lines:
-                            parts = line.strip().split()
-                            if not parts or (len(parts) >= 2 and parts[0] == '['):
-                                continue
-                            if len(parts) >= 5:
-                                cls = int(parts[0])
-                                x = float(parts[1])
-                                y = float(parts[2])
-                                w = float(parts[3])
-                                h = float(parts[4])
-                                boxes.append((cls, x, y, w, h))
-                        self.annotations[image_path] = boxes
-                        _debug(f"加载了 {len(boxes)} 个标注")
-                    found = True
-                    break
-
-            if not found:
+            image_path = self._match_annotation_image(ann_path)
+            if image_path is None:
                 _debug(f"未找到匹配的图片: {ann_path}")
-                base_name = os.path.basename(ann_path)
-                for image_path in self.images:
-                    if os.path.basename(image_path).startswith(os.path.splitext(base_name)[0]):
-                        _debug(f"通过文件名匹配找到图片: {image_path}")
-                        with open(ann_path, 'r') as f:
-                            lines = f.readlines()
-                            boxes = []
-                            for line in lines:
-                                parts = line.strip().split()
-                                if not parts or (len(parts) >= 2 and parts[0] == '['):
-                                    continue
-                                if len(parts) >= 5:
-                                    cls = int(parts[0])
-                                    x = float(parts[1])
-                                    y = float(parts[2])
-                                    w = float(parts[3])
-                                    h = float(parts[4])
-                                    boxes.append((cls, x, y, w, h))
-                            self.annotations[image_path] = boxes
-                            _debug(f"加载了 {len(boxes)} 个标注")
-                        found = True
-                        break
+                continue
+
+            _debug(f"找到匹配的图片: {image_path}")
+            boxes = self._parse_annotation_file(ann_path)
+            self.annotations[image_path] = boxes
+            _debug(f"加载了 {len(boxes)} 个标注")
         self.show_current_image()
 
     def save_annotations(self, directory):
         """保存标注"""
         try:
             _debug(f"接收到保存标注请求，目录: {directory}")
-
-            if not directory:
+            output_dir = self._ensure_output_directory(directory)
+            if output_dir is None:
                 _debug("保存目录为空")
                 return
-
-            if not os.path.exists(directory):
-                try:
-                    os.makedirs(directory)
-                    _debug(f"已创建目录: {directory}")
-                except Exception as e:
-                    _debug(f"创建目录失败: {e}")
-                    return
-
-            _debug(f"开始保存标注到目录: {directory}")
-            _debug(f"annotations字典内容: {self.annotations}")
-            _debug(f"共有 {len(self.annotations)} 个图片的标注需要保存")
-
-            _debug(f"images列表长度: {len(self.images)}")
-            if self.images:
-                _debug(f"当前图片: {self.images[self.current_index]}")
 
             saved_count = 0
             for image_path, boxes in self.annotations.items():
                 try:
-                    _debug(f"处理图片: {image_path}")
-                    _debug(f"图片路径是否存在: {os.path.exists(image_path)}")
-
-                    base_name = os.path.basename(image_path)
-                    _debug(f"图片基本名称: {base_name}")
-
-                    ann_path = os.path.join(directory, os.path.splitext(base_name)[0] + ".txt")
-                    _debug(f"生成的标注文件路径: {ann_path}")
-
-                    _debug(f"该图片有 {len(boxes)} 个标注")
-                    if boxes:
-                        _debug(f"第一个标注: {boxes[0]}")
-
-                    try:
-                        with open(ann_path, 'w') as f:
-                            for box in boxes:
-                                if len(box) >= 5:
-                                    cls, x, y, w, h = box
-                                    line = f"{cls} {x} {y} {w} {h}\n"
-                                    _debug(f"写入行: {line.strip()}")
-                                    f.write(line)
-                                else:
-                                    _debug(f"标注格式错误: {box}")
-                        _debug(f"成功写入文件: {ann_path}")
-                        if os.path.exists(ann_path):
-                            _debug(f"文件已创建，大小: {os.path.getsize(ann_path)} 字节")
-                        else:
-                            _debug("文件创建失败")
-                        saved_count += 1
-                    except Exception as e:
-                        _debug(f"写入文件时出错: {e}")
+                    self._write_annotation_file(output_dir, image_path, boxes)
+                    saved_count += 1
                 except Exception as e:
                     _debug(f"处理图片时出错: {e}")
 
             try:
-                import yaml
-                used_classes = set()
-                for boxes in self.annotations.values():
-                    for box in boxes:
-                        if len(box) >= 1:
-                            cls = box[0]
-                            used_classes.add(cls)
-
-                used_class_names = [self.class_names[cls] for cls in sorted(used_classes)]
-                classes_yaml = os.path.join(directory, 'classes.yaml')
-                classes_info = {
-                    'names': used_class_names,
-                    'nc': len(used_class_names)
-                }
-                with open(classes_yaml, 'w', encoding='utf-8') as f:
-                    yaml.dump(classes_info, f, default_flow_style=False, allow_unicode=True)
+                classes_yaml, used_class_names = self._write_classes_yaml(output_dir)
                 _debug(f"成功生成类别信息文件: {classes_yaml}")
                 _debug(f"实际使用的类别: {used_class_names}")
                 _debug(f"类别数: {len(used_class_names)}")
@@ -574,27 +559,7 @@ class AnnotationTool(QWidget):
         if not os.path.exists(image_path):
             return
 
-        # 使用PIL读取图片，更好地支持中文路径
-        try:
-            from PIL import Image
-            pil_image = Image.open(image_path)
-            # 转换为RGB模式
-            if pil_image.mode != 'RGB':
-                pil_image = pil_image.convert('RGB')
-            # 转换为numpy数组
-            import numpy as np
-            self.current_image = np.array(pil_image)
-        except Exception as e:
-            _debug(f"使用PIL读取图片失败: {e}")
-            # 尝试使用cv2作为备选
-            try:
-                self.current_image = cv2.imread(image_path)
-                if self.current_image is not None:
-                    self.current_image = cv2.cvtColor(self.current_image, cv2.COLOR_BGR2RGB)
-            except Exception as e2:
-                _debug(f"使用cv2读取图片失败: {e2}")
-                return
-
+        self.current_image = self._load_image_array(image_path)
         if self.current_image is None:
             return
 
