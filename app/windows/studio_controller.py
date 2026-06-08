@@ -286,6 +286,13 @@ class StudioController:
         file_path, _ = QFileDialog.getOpenFileName(self.window, title, "", file_filter)
         return file_path
 
+    def _choose_files(self, title: str, file_filter: str) -> list[str]:
+        files, _ = QFileDialog.getOpenFileNames(self.window, title, "", file_filter)
+        return files
+
+    def _choose_directory(self, title: str) -> str:
+        return QFileDialog.getExistingDirectory(self.window, title)
+
     def _refresh_buttons_if(self, loaded: bool) -> None:
         if loaded:
             self.window.update_button_states()
@@ -458,12 +465,7 @@ class StudioController:
         )
 
     def load_infer_images(self) -> None:
-        files, _ = QFileDialog.getOpenFileNames(
-            self.window,
-            "选择推理图像",
-            "",
-            "图像文件 (*.jpg *.jpeg *.png *.bmp *.sxm)",
-        )
+        files = self._choose_files("选择推理图像", "图像文件 (*.jpg *.jpeg *.png *.bmp *.sxm)")
         if not files:
             return
         converted = self._apply_image_load_result(
@@ -474,12 +476,7 @@ class StudioController:
         self.window.update_button_states()
 
     def load_images(self) -> None:
-        files, _ = QFileDialog.getOpenFileNames(
-            self.window,
-            "选择图像",
-            "",
-            "图像文件 (*.jpg *.jpeg *.png *.bmp *.sxm)",
-        )
+        files = self._choose_files("选择图像", "图像文件 (*.jpg *.jpeg *.png *.bmp *.sxm)")
         if not files:
             return
         converted = self.convert_sxm_files(files)
@@ -487,12 +484,7 @@ class StudioController:
         self.window.update_button_states()
 
     def load_annotations(self) -> None:
-        files, _ = QFileDialog.getOpenFileNames(
-            self.window,
-            "选择标注",
-            "",
-            "文本文件 (*.txt)",
-        )
+        files = self._choose_files("选择标注", "文本文件 (*.txt)")
         if not files:
             return
         self.window.log(f"已加载 {len(files)} 个标注文件")
@@ -506,7 +498,7 @@ class StudioController:
         self._detect_and_display_classes()
 
     def save_annotations(self) -> None:
-        directory = QFileDialog.getExistingDirectory(self.window, "选择输出目录")
+        directory = self._choose_directory("选择输出目录")
         if not directory:
             return
         state = self.window.annotation_tool.export_state()
@@ -515,7 +507,7 @@ class StudioController:
         self.window.update_button_states()
 
     def crop_resnet_dataset(self) -> None:
-        directory = QFileDialog.getExistingDirectory(self.window, "选择输出目录")
+        directory = self._choose_directory("选择输出目录")
         if not directory:
             return
 
@@ -558,7 +550,7 @@ class StudioController:
         self._refresh_buttons_if(loaded)
 
     def load_resnet_data(self) -> None:
-        directory = QFileDialog.getExistingDirectory(self.window, "选择分类数据目录")
+        directory = self._choose_directory("选择分类数据目录")
         loaded, _ = self.window.resource_loader_service.load_resnet_dataset(
             directory,
             self.window.log,
