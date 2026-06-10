@@ -102,7 +102,7 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
         tab_widget = getattr(self, "tab_widget", None)
         if tab_widget is None:
             return
-        labels = ["标注", "训练", "推理", "采集", "结果"]
+        labels = ["采集", "标注", "训练", "推理", "结果"]
         for index, label in enumerate(labels):
             if tab_widget.count() > index:
                 tab_widget.setTabText(index, label)

@@ -118,10 +118,10 @@ class StudioRuntimeController:
 
         current_index = getattr(getattr(self.window, "tab_widget", None), "currentIndex", lambda: 0)()
         mode_text = {
-            0: "标注",
-            1: "训练",
-            2: "推理",
-            3: "采集",
+            0: "采集",
+            1: "标注",
+            2: "训练",
+            3: "推理",
             4: "结果",
         }.get(current_index, "工作台")
         self._set_label_text("workspace_mode_detail", mode_text)
@@ -244,19 +244,19 @@ class StudioRuntimeController:
         annotation_tool = getattr(self.window, "annotation_tool", None)
         if annotation_tool is not None:
             state = annotation_tool.export_state()
-            is_annotation = index == 0
+            is_annotation = index == 1
             if hasattr(annotation_tool, "set_annotation_mode"):
                 annotation_tool.set_annotation_mode(is_annotation)
             mode_logs = {
-                0: "已切换到标注模式。",
-                1: "已切换到训练模式。",
-                2: "已切换到推理模式。",
-                3: "已切换到采集模式。",
+                0: "已切换到采集模式。",
+                1: "已切换到标注模式。",
+                2: "已切换到训练模式。",
+                3: "已切换到推理模式。",
                 4: "已切换到结果页面。",
             }
             if index in mode_logs:
                 self.window.log(mode_logs[index])
-            if index == 2 and getattr(state, "images", None):
+            if index == 3 and getattr(state, "images", None):
                 self.window.inference_manager.load_images([self.window._get_gray_path(path) for path in state.images])
         self._refresh_status_labels()
         self.update_button_states()

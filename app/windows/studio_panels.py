@@ -7,7 +7,7 @@ from app.windows.studio_shell import _create_collapsible_section
 
 class StudioPanelsMixin:
     def _build_studio_tabs(self):
-        self.tab_widget.addTab(self._build_acquisition_tab(), "采集")
+        self.tab_widget.insertTab(0, self._build_acquisition_tab(), "采集")
         self.tab_widget.addTab(self._build_results_tab(), "结果")
 
     def _build_acquisition_tab(self):

@@ -673,7 +673,7 @@ class StudioController:
         self.window.current_session = selection.session
         load_result = self.window.image_workflow_service.convert_for_inference(selection.files)
         self._apply_image_load_result(load_result, load_inference_images=True)
-        self.window.tab_widget.setCurrentIndex(2)
+        self.window.tab_widget.setCurrentIndex(3)
         self.window.log(f"已加载 {len(selection.files)} 张结果图像用于推理")
         self.window.update_button_states()
 

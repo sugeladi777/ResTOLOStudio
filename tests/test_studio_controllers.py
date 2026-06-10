@@ -521,7 +521,7 @@ def test_runtime_controller_update_button_states_and_tab_sync(tmp_path: Path):
     controller = StudioRuntimeController(window)
 
     controller.update_button_states()
-    controller.on_tab_changed(2)
+    controller.on_tab_changed(3)
 
     assert window.load_annotations_btn.enabled is True
     assert window.save_annotations_btn.enabled is True
