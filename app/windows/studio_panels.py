@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from PyQt5.QtWidgets import QHBoxLayout, QListWidget, QTextEdit, QVBoxLayout, QWidget
 
-from app.windows.studio_shell import _create_collapsible_section
+from app.windows.studio_shell import _create_collapsible_section, _wrap_tab_with_scroll
 
 
 class StudioPanelsMixin:
     def _build_studio_tabs(self):
-        self.tab_widget.insertTab(0, self._build_acquisition_tab(), "采集")
-        self.tab_widget.addTab(self._build_results_tab(), "结果")
+        self.tab_widget.insertTab(0, _wrap_tab_with_scroll(self._build_acquisition_tab()), "采集")
+        self.tab_widget.addTab(_wrap_tab_with_scroll(self._build_results_tab()), "结果")
 
     def _build_acquisition_tab(self):
         tab = QWidget()
@@ -35,11 +35,22 @@ class StudioPanelsMixin:
         self.result_detail_text.setReadOnly(True)
         self.result_detail_text.setMaximumHeight(110)
 
+        self.new_session_btn = self.create_button("新建会话", self.create_session)
+        self.activate_session_btn = self.create_button("设为当前", self.activate_selected_session)
+        self.rename_session_btn = self.create_button("重命名会话", self.rename_selected_session)
         self.use_selected_result_btn = self.create_button("用于推理", self.use_selected_result_for_inference, accent=True)
         self.refresh_sessions_btn = self.create_button("刷新会话", self.reload_sessions)
 
         layout.addWidget(self.create_label("会话"))
         layout.addWidget(self.session_list)
+
+        session_actions = QHBoxLayout()
+        session_actions.setSpacing(4)
+        session_actions.addWidget(self.new_session_btn, 1)
+        session_actions.addWidget(self.activate_session_btn, 1)
+        session_actions.addWidget(self.rename_session_btn, 1)
+        layout.addLayout(session_actions)
+
         layout.addWidget(self.create_label("结果"))
         layout.addWidget(self.result_list)
 
@@ -82,7 +93,7 @@ class StudioPanelsMixin:
         layout.addWidget(self.nano_port_edit)
         layout.addWidget(self.create_label("版本"))
         layout.addWidget(self.nano_version_edit)
-        layout.addWidget(self.create_button("连接", self.connect_nanonis, accent=True))
+        layout.addWidget(self.create_button("连接", self.connect_nanonis))
         layout.addWidget(self.create_button("断开", self.disconnect_nanonis))
         layout.addWidget(self.create_button("刷新状态", self.refresh_nanonis_status))
         status_panel = QWidget()
@@ -106,6 +117,10 @@ class StudioPanelsMixin:
         self.scan_width_edit.setText("5")
         self.scan_height_edit = self.create_line_edit("5")
         self.scan_height_edit.setText("5")
+        self.scan_center_x_edit = self.create_line_edit("0")
+        self.scan_center_x_edit.setText("0")
+        self.scan_center_y_edit = self.create_line_edit("0")
+        self.scan_center_y_edit.setText("0")
         self.scan_pixels_edit = self.create_line_edit("256")
         self.scan_pixels_edit.setText("256")
         self.scan_channels_edit = self.create_line_edit("Z, 电流")
@@ -128,12 +143,16 @@ class StudioPanelsMixin:
         compact_layout.addWidget(self.scan_width_edit)
         compact_layout.addWidget(self.create_label("高度 (nm)"))
         compact_layout.addWidget(self.scan_height_edit)
+        compact_layout.addWidget(self.create_label("中心 X (nm)"))
+        compact_layout.addWidget(self.scan_center_x_edit)
+        compact_layout.addWidget(self.create_label("中心 Y (nm)"))
+        compact_layout.addWidget(self.scan_center_y_edit)
         compact_layout.addWidget(self.create_label("像素"))
         compact_layout.addWidget(self.scan_pixels_edit)
         compact_layout.addWidget(self.create_label("通道"))
         compact_layout.addWidget(self.scan_channels_edit)
         layout.addWidget(self.create_button("应用参数", self.apply_nanonis_scan))
-        layout.addWidget(self.create_button("扫描并保存", self.scan_and_save_from_nanonis, accent=True))
+        layout.addWidget(self.create_button("扫描并保存", self.scan_and_save_from_nanonis))
         layout.addWidget(_create_collapsible_section("更多", compact_panel, expanded=False))
         return group
 

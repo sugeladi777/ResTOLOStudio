@@ -46,14 +46,16 @@ class AcquisitionWorkflowService:
         self,
         width_nm: str,
         height_nm: str,
+        center_x_nm: str,
+        center_y_nm: str,
         pixels: str,
         channels: str,
     ) -> ScanGeometry:
         return ScanGeometry(
             width_nm=float(width_nm.strip()),
             height_nm=float(height_nm.strip()),
-            center_x_nm=0.0,
-            center_y_nm=0.0,
+            center_x_nm=float(center_x_nm.strip()),
+            center_y_nm=float(center_y_nm.strip()),
             angle_deg=0.0,
             pixels=int(pixels.strip()),
             channels=[part.strip() for part in channels.split(",") if part.strip()],
@@ -65,8 +67,15 @@ class AcquisitionWorkflowService:
         label: str,
         nanonis_service,
     ) -> SessionRecord:
-        session = self.session_workflow_service.create_session(label.strip() or "session")
-        nanonis_service.output_root = self.session_workflow_service.scan_dir(session.id)
+        requested_label = label.strip() or "session"
+        session = current_session or self.session_workflow_service.create_session(requested_label)
+        if getattr(session, "label", "") != requested_label:
+            session = self.session_workflow_service.rename_session(session.id, requested_label)
+        output_root = self.session_workflow_service.scan_dir(session.id)
+        if hasattr(nanonis_service, "set_output_root"):
+            nanonis_service.set_output_root(output_root)
+        else:
+            nanonis_service.output_root = output_root
         return session
 
     def append_scan_result(self, session_id: str, result: dict | ScanResultRecord) -> ScanResultRecord:

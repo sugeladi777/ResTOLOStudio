@@ -13,6 +13,7 @@ dependencies:
   - seaborn
   - pillow
   - pyyaml
+  - setuptools
   - tqdm
   - tensorboard
   - pyqt=5.15.*

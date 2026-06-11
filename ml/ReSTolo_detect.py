@@ -347,15 +347,11 @@ def detect(save_img=False):
                             #print(subplot.shape)
                             #raise ValueError
                             #计算结果
-                            gc.collect()
-                            torch.cuda.empty_cache()
                             resultat1=resnet_model(subplot)
                             #print(resultat1)
                             #raise ValueError
                             
                             #判断
-                            gc.collect()
-                            torch.cuda.empty_cache()
                             max_values1,max_indices1=torch.max(resultat1,dim=1,keepdim=True)
                             resultat1=resultat1-max_values1
                             s1 = torch.exp(resultat1)+1.e-21 #防止爆炸

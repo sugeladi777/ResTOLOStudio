@@ -11,6 +11,9 @@ import zlib
 import numpy as np
 
 try:
+    import matplotlib
+
+    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 except ImportError:
     plt = None
@@ -147,27 +150,63 @@ class NanonisExperimentClient:
             for slot, (name, signal_index) in enumerate(zip(names, signal_indexes))
         ]
 
+    def _normalize_signal_name(self, signal_name):
+        return "".join(ch.lower() for ch in str(signal_name) if ch.isalnum())
+
+    def _signal_aliases(self, signal_name):
+        normalized = self._normalize_signal_name(signal_name)
+        aliases = {normalized}
+        alias_map = {
+            "z": {"z", "zm", "zmeter", "zposition", "zpos"},
+            "current": {"current", "curr", "currenta", "tunnelcurrent"},
+        }
+        aliases.update(alias_map.get(normalized, set()))
+        return aliases
+
+    def _match_signal_index_from_slots(self, signal_name, slots):
+        aliases = self._signal_aliases(signal_name)
+        for slot in slots:
+            slot_name = self._normalize_signal_name(slot.get("name", ""))
+            if slot_name in aliases:
+                return slot["slot"]
+        for slot in slots:
+            slot_name = self._normalize_signal_name(slot.get("name", ""))
+            if any(alias and alias in slot_name for alias in aliases):
+                return slot["slot"]
+        return None
+
+    def _match_signal_index_from_names(self, signal_name, signal_names):
+        aliases = self._signal_aliases(signal_name)
+        for index, name in enumerate(signal_names):
+            normalized = self._normalize_signal_name(name)
+            if normalized in aliases:
+                return index
+        for index, name in enumerate(signal_names):
+            normalized = self._normalize_signal_name(name)
+            if any(alias and alias in normalized for alias in aliases):
+                return index
+        return None
+
     def scan_channel_indexes_for_signal_names(self, signal_names):
         if self.version < 11798:
-            slots = self.input_slots()
-            channel_indexes = []
-            for signal_name in signal_names:
-                match = next(
-                    (slot["slot"] for slot in slots if slot["name"].lower() == signal_name.lower()),
-                    None,
-                )
-                if match is None:
-                    raise ValueError(f"Signal is not assigned to an input slot: {signal_name}")
-                channel_indexes.append(match)
-            return tuple(channel_indexes)
+            try:
+                slots = self.input_slots()
+            except TimeoutError:
+                slots = None
+
+            if slots:
+                channel_indexes = []
+                for signal_name in signal_names:
+                    match = self._match_signal_index_from_slots(signal_name, slots)
+                    if match is None:
+                        raise ValueError(f"Signal is not assigned to an input slot: {signal_name}")
+                    channel_indexes.append(match)
+                return tuple(channel_indexes)
 
         available_names = self.signal_names()
         channel_indexes = []
         for signal_name in signal_names:
-            match = next(
-                (index for index, name in enumerate(available_names) if name.lower() == signal_name.lower()),
-                None,
-            )
+            match = self._match_signal_index_from_names(signal_name, available_names)
             if match is None:
                 raise ValueError(f"Signal is not available: {signal_name}")
             channel_indexes.append(match)
@@ -307,6 +346,8 @@ class NanonisExperimentClient:
         saved = []
         for channel_index in channel_indexes:
             channel_name, data, scan_direction = self.scan.FrameDataGrab(channel_index, direction)
+            if getattr(data, "size", 0) == 0:
+                continue
             base_path = self.save_frame_data(
                 label=label,
                 channel_name=channel_name,
@@ -359,7 +400,7 @@ class NanonisExperimentClient:
 
     def save_frame_data(self, label, channel_name, data, scan_direction):
         self.output_dir.mkdir(exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         safe_label = _safe_name(label)
         safe_channel_name = _safe_name(channel_name)
         base = self.output_dir / f"{timestamp}_{safe_label}_{safe_channel_name}_{scan_direction}"
@@ -380,7 +421,7 @@ class NanonisExperimentClient:
             first_base = Path(result["saved"][0]["base_path"])
             manifest_path = first_base.with_name(first_base.name + "_manifest.json")
         else:
-            manifest_path = self.output_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{_safe_name(result['label'])}_manifest.json"
+            manifest_path = self.output_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{_safe_name(result['label'])}_manifest.json"
 
         manifest = {
             "label": result["label"],

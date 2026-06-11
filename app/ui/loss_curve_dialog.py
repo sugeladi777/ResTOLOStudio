@@ -37,19 +37,13 @@ class LossCurveDialog(QDialog):
         layout.addWidget(self.canvas)
 
         if mode == "yolo":
-            self.ax_train = self.figure.add_subplot(121)
-            self.ax_val = self.figure.add_subplot(122)
+            self.ax_train = self.figure.add_subplot(111)
             self._setup_yolo_axes()
             self.epochs = []
             self.box_loss = []
             self.obj_loss = []
             self.cls_loss = []
             self.total_loss = []
-            self.precision = []
-            self.recall = []
-            self.map50 = []
-            self.map50_95 = []
-            self.val_epochs = []
         else:
             self.ax_resnet = self.figure.add_subplot(111)
             self._setup_resnet_axes()
@@ -70,13 +64,9 @@ class LossCurveDialog(QDialog):
 
     def _setup_yolo_axes(self):
         self._style_ax(self.ax_train)
-        self._style_ax(self.ax_val)
         self.ax_train.set_title("训练损失", fontsize=11)
         self.ax_train.set_xlabel("轮次", fontsize=9)
         self.ax_train.set_ylabel("损失", fontsize=9)
-        self.ax_val.set_title("验证指标", fontsize=11)
-        self.ax_val.set_xlabel("轮次", fontsize=9)
-        self.ax_val.set_ylabel("数值", fontsize=9)
 
     def _setup_resnet_axes(self):
         self._style_ax(self.ax_resnet)
@@ -92,14 +82,6 @@ class LossCurveDialog(QDialog):
         self.total_loss.append(total)
         self._redraw_yolo_train()
 
-    def update_val_metrics(self, epoch, precision, recall, map50, map50_95):
-        self.val_epochs.append(epoch)
-        self.precision.append(precision)
-        self.recall.append(recall)
-        self.map50.append(map50)
-        self.map50_95.append(map50_95)
-        self._redraw_yolo_val()
-
     def _redraw_yolo_train(self):
         self.ax_train.clear()
         self._style_ax(self.ax_train)
@@ -113,26 +95,6 @@ class LossCurveDialog(QDialog):
         self.ax_train.plot(self.epochs, self.total_loss, label="总损失", color=BASE_COLOR, linewidth=1.8)
 
         legend = self.ax_train.legend(loc="upper right", fontsize=8, facecolor=PANEL_BG, edgecolor=BORDER_COLOR)
-        for text in legend.get_texts():
-            text.set_color(TEXT_COLOR)
-
-        self.figure.tight_layout(pad=2.0)
-        self.canvas.draw_idle()
-
-    def _redraw_yolo_val(self):
-        self.ax_val.clear()
-        self._style_ax(self.ax_val)
-        self.ax_val.set_title("验证指标", fontsize=11)
-        self.ax_val.set_xlabel("轮次", fontsize=9)
-        self.ax_val.set_ylabel("数值", fontsize=9)
-
-        if self.val_epochs:
-            self.ax_val.plot(self.val_epochs, self.precision, label="精确率", color="#FF6B6B", linewidth=1.2)
-            self.ax_val.plot(self.val_epochs, self.recall, label="召回率", color="#4ECDC4", linewidth=1.2)
-            self.ax_val.plot(self.val_epochs, self.map50, label="mAP@0.5", color="#FFE66D", linewidth=1.2)
-            self.ax_val.plot(self.val_epochs, self.map50_95, label="mAP@0.5:0.95", color=BASE_COLOR, linewidth=1.8)
-
-        legend = self.ax_val.legend(loc="lower right", fontsize=8, facecolor=PANEL_BG, edgecolor=BORDER_COLOR)
         for text in legend.get_texts():
             text.set_color(TEXT_COLOR)
 

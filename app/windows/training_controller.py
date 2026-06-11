@@ -4,7 +4,7 @@ import os
 import threading
 from pathlib import Path
 
-from PyQt5.QtWidgets import QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QFileDialog
 
 from app.core import AppPaths
 from app.services.training_runner_service import ResnetTrainingCallbacks
@@ -24,6 +24,16 @@ class StudioTrainingController:
         return AppPaths.from_project_root(Path(__file__).resolve().parents[2])
 
     def _choose_training_project_dir(self):
+        session_service = getattr(self.window, "session_workflow_service", None)
+        current_session = getattr(self.window, "current_session", None)
+        if session_service is not None:
+            session = session_service.ensure_session(current_session, "training")
+            self.window.current_session = session
+            project_dir = session_service.training_dir(session.id)
+            project_dir.mkdir(parents=True, exist_ok=True)
+            self.window.log(f"使用当前会话训练目录：{project_dir}")
+            return str(project_dir)
+
         project_dir = QFileDialog.getExistingDirectory(self.window, "选择训练输出目录")
         if not project_dir:
             self.window.log("已取消训练")
@@ -33,8 +43,31 @@ class StudioTrainingController:
     def _annotation_state(self):
         return self.window.annotation_tool.export_state()
 
-    def _has_annotation_training_data(self) -> bool:
+    def _saved_annotation_state(self):
+        session_service = getattr(self.window, "session_workflow_service", None)
+        current_session = getattr(self.window, "current_session", None)
+        annotation_service = getattr(self.window, "annotation_service", None)
+        if session_service is None or current_session is None or annotation_service is None:
+            return None
+        annotation_dir = session_service.annotation_dir(current_session.id)
+        if not annotation_dir.exists():
+            return None
+        return annotation_service.load_saved_annotation_state(str(annotation_dir))
+
+    def _annotation_training_source(self):
+        saved_state = self._saved_annotation_state()
+        if saved_state is not None and self.window.annotation_service.has_images(saved_state) and self.window.annotation_service.has_annotations(saved_state):
+            self.window.log("分类训练将优先使用当前会话中已保存的标注数据")
+            return saved_state, (lambda path: path), True
+
         state = self._annotation_state()
+        if self.window.annotation_service.has_images(state) and self.window.annotation_service.has_annotations(state):
+            return state, self.window._get_gray_path, False
+
+        return state, self.window._get_gray_path, False
+
+    def _has_annotation_training_data(self) -> bool:
+        state, _, _ = self._annotation_training_source()
         return self.window.training_workflow_service.validate_annotation_training_data(
             state,
             self.window.annotation_service,
@@ -55,8 +88,11 @@ class StudioTrainingController:
     def _start_background_training(self, target) -> None:
         threading.Thread(target=target, daemon=True).start()
 
-    def _training_parameters(self) -> tuple[int, int]:
-        return self.window.epochs_spin.value(), self.window.batch_spin.value()
+    def _yolo_training_parameters(self) -> tuple[int, int]:
+        return self.window.yolo_epochs_spin.value(), self.window.yolo_batch_spin.value()
+
+    def _resnet_training_parameters(self) -> tuple[int, int]:
+        return self.window.resnet_epochs_spin.value(), self.window.resnet_batch_spin.value()
 
     def _selected_class_indices(self) -> list[int]:
         return self.window.dataset_service.selected_class_indices(
@@ -65,8 +101,8 @@ class StudioTrainingController:
             getattr(self.window, "class_indices", []),
         )
 
-    def _class_names_for_indices(self, class_indices: list[int]) -> list[str]:
-        return self.window.dataset_service.class_names_for_indices(self.window.annotation_tool, class_indices)
+    def _class_names_for_indices(self, annotation_source, class_indices: list[int]) -> list[str]:
+        return self.window.dataset_service.class_names_for_indices(annotation_source, class_indices)
 
     def _ensure_yolo_loss_dialog(self) -> None:
         if not hasattr(self.window, "loss_curve_dialog") or self.window.loss_curve_dialog is None:
@@ -77,13 +113,7 @@ class StudioTrainingController:
             self.window.loss_curve_dialog.obj_loss.clear()
             self.window.loss_curve_dialog.cls_loss.clear()
             self.window.loss_curve_dialog.total_loss.clear()
-            self.window.loss_curve_dialog.precision.clear()
-            self.window.loss_curve_dialog.recall.clear()
-            self.window.loss_curve_dialog.map50.clear()
-            self.window.loss_curve_dialog.map50_95.clear()
-            self.window.loss_curve_dialog.val_epochs.clear()
             self.window.loss_curve_dialog.ax_train.clear()
-            self.window.loss_curve_dialog.ax_val.clear()
             self.window.loss_curve_dialog._setup_yolo_axes()
             self.window.loss_curve_dialog.canvas.draw_idle()
         self.window.loss_curve_dialog.show()
@@ -135,16 +165,16 @@ class StudioTrainingController:
         except Exception as exc:  # noqa: BLE001
             error_msg = f"训练失败：{exc}"
             self.window.log(error_msg)
-            QMessageBox.warning(self.window, "训练失败", error_msg)
+            self.window.training_error_signal.emit(str(exc))
 
     def train_yolo(self) -> None:
         self.window.log("开始训练检测模型...")
         if not self._has_annotation_training_data():
             return
 
-        epochs, batch_size = self._training_parameters()
+        epochs, batch_size = self._yolo_training_parameters()
         device = "0"
-        state = self._annotation_state()
+        state, gray_path_resolver, _ = self._annotation_training_source()
 
         project_dir = self._choose_training_project_dir()
         if not project_dir:
@@ -154,7 +184,7 @@ class StudioTrainingController:
         self._prepare_training_context("yolo", project_dir)
         plan = self.window.training_workflow_service.prepare_yolo_training(
             state,
-            self.window._get_gray_path,
+            gray_path_resolver,
             self.window.training_manager,
             self.window.log,
         )
@@ -187,6 +217,16 @@ class StudioTrainingController:
             return None
         data_path = path_widget.text()
         return data_path if data_path and os.path.exists(data_path) else None
+
+    def _classes_yaml_path(self) -> str:
+        for attr_name in ("train_classes_path", "infer_classes_path"):
+            widget = getattr(self.window, attr_name, None)
+            if widget is None or not hasattr(widget, "text"):
+                continue
+            value = widget.text().strip()
+            if value:
+                return value
+        return ""
 
     def _run_resnet_training_job(
         self,
@@ -223,9 +263,6 @@ class StudioTrainingController:
             error_msg = f"训练失败：{exc}\n{traceback.format_exc()}"
             self.window.log(error_msg)
             self.window.training_error_signal.emit(str(exc))
-            QMessageBox.warning(self.window, "训练失败", error_msg)
-        finally:
-            self.window.enable_controls()
 
     def train_resnet(self) -> None:
         self.window.log("开始训练分类模型...")
@@ -238,22 +275,24 @@ class StudioTrainingController:
 
         self.window._resnet_project_dir = project_dir
         self._prepare_training_context("resnet", project_dir)
-        selected_class_indices = self._selected_class_indices()
-        class_names = self._class_names_for_indices(selected_class_indices)
+        annotation_source, gray_path_resolver, using_saved_state = self._annotation_training_source()
+        selected_class_indices = [] if using_saved_state else self._selected_class_indices()
+        class_names = self._class_names_for_indices(annotation_source, selected_class_indices) if selected_class_indices else []
         plan = self.window.training_workflow_service.prepare_resnet_training(
-            self.window.annotation_tool,
-            self.window._get_gray_path,
+            annotation_source,
+            gray_path_resolver,
             project_dir,
             self._resnet_data_path(),
             selected_class_indices,
             class_names,
+            self._classes_yaml_path(),
             self.window.log,
         )
         if plan is None:
             return
 
         self._prepare_training_ui()
-        epochs, batch_size = self._training_parameters()
+        epochs, batch_size = self._resnet_training_parameters()
         self._ensure_resnet_loss_dialog()
         self._start_background_training(
             lambda: self._run_resnet_training_job(

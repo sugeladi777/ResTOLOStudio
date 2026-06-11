@@ -55,6 +55,9 @@ class TrainingResultRecord:
     project_dir: str = ""
     output_dir: str = ""
     status: str = ""
+    yolo_model_path: str = ""
+    resnet_model_path: str = ""
+    classes_yaml_path: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -64,6 +67,9 @@ class TrainingResultRecord:
             project_dir=str(payload.get("project_dir", "")),
             output_dir=str(payload.get("output_dir", "")),
             status=str(payload.get("status", "")),
+            yolo_model_path=str(payload.get("yolo_model_path", "")),
+            resnet_model_path=str(payload.get("resnet_model_path", "")),
+            classes_yaml_path=str(payload.get("classes_yaml_path", "")),
             raw=dict(payload),
         )
 
@@ -73,6 +79,9 @@ class TrainingResultRecord:
         payload.setdefault("project_dir", self.project_dir)
         payload.setdefault("output_dir", self.output_dir)
         payload.setdefault("status", self.status)
+        payload.setdefault("yolo_model_path", self.yolo_model_path)
+        payload.setdefault("resnet_model_path", self.resnet_model_path)
+        payload.setdefault("classes_yaml_path", self.classes_yaml_path)
         return payload
 
 

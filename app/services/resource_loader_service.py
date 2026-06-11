@@ -16,6 +16,7 @@ class ResourceLoaderService:
         train_resnet_target,
         infer_resnet_target,
         infer_classes_target,
+        train_classes_target=None,
     ) -> None:
         self._set_default_model_path(
             runtime_paths.default_yolo_model_path,
@@ -30,7 +31,10 @@ class ResourceLoaderService:
             infer_resnet_target,
         )
         if runtime_paths.default_classes_path.exists():
-            infer_classes_target.setText(str(runtime_paths.default_classes_path))
+            resolved = str(runtime_paths.default_classes_path)
+            infer_classes_target.setText(resolved)
+            if train_classes_target is not None:
+                train_classes_target.setText(resolved)
 
     def load_yolo_model(self, file_path: str, model_manager, log, *targets) -> bool:
         if not file_path:

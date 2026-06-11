@@ -156,12 +156,11 @@ class TrainingManager(QObject):
                 if process.returncode != 0:
                     self._emit_error(f"训练失败，退出码: {process.returncode}")
                     return
+                self.finished_signal.emit()
             except Exception as exc:
                 self._emit_error(f"错误: {exc}")
-                return
             finally:
                 self.training_process = None
-                self.finished_signal.emit()
 
         thread = threading.Thread(target=run, daemon=True)
         thread.start()

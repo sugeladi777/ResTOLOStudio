@@ -26,3 +26,12 @@ def test_runtime_create_exposes_core_services(tmp_path: Path):
 
     assert runtime.paths.config_path.parent.exists()
     assert runtime.paths.sessions_root.exists()
+
+
+def test_runtime_create_startup_session_reuses_latest_session(tmp_path: Path):
+    runtime = AppRuntime.create(tmp_path)
+    latest = runtime.session_workflow_service.create_session("demo")
+
+    reused = runtime.create_startup_session("startup")
+
+    assert reused.id == latest.id

@@ -51,3 +51,20 @@ def test_inference_workflow_service_selects_scan_result_files(tmp_path: Path):
     assert selection.session.id == session.id
     assert selection.files == [str(tmp_path / "scan.png")]
     assert empty_selection is None
+
+
+def test_inference_workflow_service_selects_sxm_scan_result_files(tmp_path: Path):
+    session_workflow = SessionWorkflowService(ResultStoreService(tmp_path / "sessions"))
+    workflow = InferenceWorkflowService(session_workflow)
+    manager = DummyInferenceManager()
+    inference_service = InferenceService(manager)
+    session = session_workflow.create_session("demo")
+    sxm_path = tmp_path / "scan.sxm"
+    sxm_path.write_text("stub", encoding="utf-8")
+    scan_result = ScanResultRecord(label="scan", raw={"nanonis_file_path": str(sxm_path)})
+
+    selection = workflow.select_scan_result_for_inference(session, scan_result, inference_service)
+
+    assert selection is not None
+    assert selection.session.id == session.id
+    assert selection.files == [str(sxm_path)]

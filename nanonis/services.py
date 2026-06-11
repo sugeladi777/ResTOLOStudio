@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+from contextlib import nullcontext
 
 from nanonis.ExperimentClient import NanonisExperimentClient
 
@@ -22,6 +23,11 @@ class NanonisSessionService:
         self.output_root = Path(output_root)
         self.client: NanonisExperimentClient | None = None
         self.config = NanonisConnectionConfig()
+
+    def set_output_root(self, output_root: Path) -> None:
+        self.output_root = Path(output_root)
+        if self.client is not None:
+            self.client.output_dir = self.output_root
 
     @property
     def connected(self) -> bool:
@@ -54,41 +60,82 @@ class NanonisSessionService:
             raise RuntimeError("Nanonis is not connected")
         return self.client
 
-    def status(self) -> dict:
-        client = self._require()
+    def _connection_summary(self, client: NanonisExperimentClient) -> dict:
+        summary_fn = getattr(client, "connection_summary", None)
+        if callable(summary_fn):
+            return summary_fn()
         return {
-            "connection": client.connection_summary(),
-            "status": client.read_status(),
+            "ip": self.config.ip,
+            "port": self.config.port,
+            "version": self.config.version,
         }
+
+    def _slow_command_timeout(self, client: NanonisExperimentClient, extra_seconds: float = 15.0):
+        timeout_s = max(self.config.response_timeout + extra_seconds, self.config.response_timeout)
+        temporary_timeout = getattr(client, "temporary_response_timeout", None)
+        if callable(temporary_timeout):
+            return temporary_timeout(timeout_s)
+        return nullcontext()
+
+    def _safe_status(self, *, fallback_message: str) -> dict:
+        client = self._require()
+        try:
+            return {
+                "connection": self._connection_summary(client),
+                "status": client.read_status(),
+            }
+        except TimeoutError:
+            return {
+                "connection": self._connection_summary(client),
+                "status": fallback_message,
+            }
+
+    def status(self) -> dict:
+        return self._safe_status(fallback_message="状态读取超时，但连接已建立。")
 
     def signal_names(self) -> list[str]:
         return list(self._require().signal_names())
 
+    def _resolve_scan_channels(self, channels: Iterable[str]) -> tuple[int, ...]:
+        client = self._require()
+        requested = list(channels)
+        try:
+            with self._slow_command_timeout(client):
+                return client.scan_channel_indexes_for_signal_names(requested)
+        except (TimeoutError, ValueError):
+            with self._slow_command_timeout(client):
+                buffer_info = client.scan.BufferGet()
+            current_indexes = tuple(buffer_info[1]) if len(buffer_info) > 1 else ()
+            if current_indexes:
+                return current_indexes
+            raise
+
     def apply_scan(self, width_nm: float, height_nm: float, center_x_nm: float, center_y_nm: float, angle_deg: float, pixels: int, channels: Iterable[str]) -> dict:
         client = self._require()
-        client.set_scan_frame_nm(width_nm, height_nm, center_x_nm, center_y_nm, angle_deg)
-        channel_indexes = client.scan_channel_indexes_for_signal_names(list(channels))
-        client.set_scan_buffer(channel_indexes=channel_indexes, pixels=pixels, lines=pixels)
-        return client.read_status()
+        with self._slow_command_timeout(client):
+            client.set_scan_frame_nm(width_nm, height_nm, center_x_nm, center_y_nm, angle_deg)
+            channel_indexes = self._resolve_scan_channels(channels)
+            client.set_scan_buffer(channel_indexes=channel_indexes, pixels=pixels, lines=pixels)
+        return self._safe_status(fallback_message="扫描参数已应用，但状态读取超时。")
 
     def set_bias(self, bias_v: float) -> dict:
         client = self._require()
         client.set_bias(bias_v)
-        return client.read_status()
+        return self._safe_status(fallback_message="偏压已设置，但状态读取超时。")
 
     def set_setpoint(self, setpoint_a: float) -> dict:
         client = self._require()
         client.set_setpoint(setpoint_a)
-        return client.read_status()
+        return self._safe_status(fallback_message="电流设定已应用，但状态读取超时。")
 
     def set_feedback(self, enabled: bool) -> dict:
         client = self._require()
         client.set_feedback(enabled)
-        return client.read_status()
+        return self._safe_status(fallback_message="反馈状态已切换，但状态读取超时。")
 
     def scan_and_save(self, *, label: str, width_nm: float, height_nm: float, center_x_nm: float, center_y_nm: float, angle_deg: float, pixels: int, channels: Iterable[str], timeout_ms: int = 300000, direction: int = 1) -> dict:
         client = self._require()
-        channel_indexes = client.scan_channel_indexes_for_signal_names(list(channels))
+        channel_indexes = self._resolve_scan_channels(channels)
         return client.scan_and_save(
             label=label,
             width_nm=width_nm,

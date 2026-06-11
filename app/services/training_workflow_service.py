@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import os
-import random
-import shutil
 import tempfile
-import time
 from dataclasses import dataclass
+from pathlib import Path
+
+import yaml
 
 from app.core import AnnotationState, SessionRecord
 from app.services.dataset_service import DatasetService
@@ -26,6 +26,7 @@ class ResnetTrainingPlan:
     testing_path: str
     saving_path: str
     project_dir: str
+    class_names: list[str]
 
 
 class TrainingWorkflowService:
@@ -94,10 +95,24 @@ class TrainingWorkflowService:
         val_images_dir = os.path.join(temp_dir, "images", "val")
         train_labels_dir = os.path.join(temp_dir, "labels", "train")
         val_labels_dir = os.path.join(temp_dir, "labels", "val")
-        self.dataset_service.write_yolo_split(state, gray_path_resolver, train_images, train_images_dir, train_labels_dir)
-        self.dataset_service.write_yolo_split(state, gray_path_resolver, val_images, val_images_dir, val_labels_dir)
+        class_index_map, class_names = self.dataset_service.remap_class_indices(state)
+        self.dataset_service.write_yolo_split(
+            state,
+            gray_path_resolver,
+            train_images,
+            train_images_dir,
+            train_labels_dir,
+            class_index_map=class_index_map,
+        )
+        self.dataset_service.write_yolo_split(
+            state,
+            gray_path_resolver,
+            val_images,
+            val_images_dir,
+            val_labels_dir,
+            class_index_map=class_index_map,
+        )
 
-        class_names = list(state.class_names)
         training_manager.generate_data_yaml(
             train_images_dir,
             val_images_dir,
@@ -122,27 +137,97 @@ class TrainingWorkflowService:
         resnet_data_path: str | None,
         selected_class_indices: list[int],
         class_names: list[str],
+        classes_yaml_path: str | None,
         log,
     ) -> ResnetTrainingPlan | None:
+        selected_class_names = self._resolve_selected_class_names(
+            annotation_source,
+            selected_class_indices,
+            class_names,
+        )
+        resolved_class_names = self._resolve_training_class_names(
+            annotation_source,
+            selected_class_names,
+            classes_yaml_path,
+            log,
+        )
         training_path, testing_path = self._prepare_resnet_paths(
             annotation_source,
             gray_path_resolver,
             project_dir,
             resnet_data_path,
             selected_class_indices,
-            class_names,
+            selected_class_names,
             log,
         )
         if not training_path or not testing_path:
             return None
         saving_path = os.path.join(project_dir, "resnet_train")
         os.makedirs(saving_path, exist_ok=True)
+        plan_class_names = resolved_class_names if resnet_data_path else selected_class_names
         return ResnetTrainingPlan(
             training_path=training_path,
             testing_path=testing_path,
             saving_path=saving_path,
             project_dir=project_dir,
+            class_names=plan_class_names,
         )
+
+    def _resolve_selected_class_names(
+        self,
+        annotation_source,
+        selected_class_indices: list[int],
+        class_names: list[str],
+    ) -> list[str]:
+        if class_names:
+            return list(class_names)
+        if selected_class_indices:
+            return self.dataset_service.class_names_for_indices(annotation_source, selected_class_indices)
+        summary = self.dataset_service.annotation_class_summary(annotation_source)
+        return list(summary.class_names)
+
+    def _resolve_training_class_names(
+        self,
+        annotation_source,
+        class_names: list[str],
+        classes_yaml_path: str | None,
+        log,
+    ) -> list[str]:
+        if class_names:
+            return list(class_names)
+
+        state = self.dataset_service._state(annotation_source)
+        summary = self.dataset_service.annotation_class_summary(state)
+        if summary.class_names:
+            return list(summary.class_names)
+        if getattr(state, "class_names", None):
+            return list(state.class_names)
+
+        yaml_names = self._load_class_names_from_yaml(classes_yaml_path, log)
+        if yaml_names:
+            log(f"训练类别来自类别文件：{yaml_names}")
+            return yaml_names
+        return []
+
+    def _load_class_names_from_yaml(self, classes_yaml_path: str | None, log) -> list[str]:
+        if not classes_yaml_path:
+            return []
+        path = Path(classes_yaml_path)
+        if not path.exists():
+            log(f"类别文件不存在，忽略：{classes_yaml_path}")
+            return []
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                payload = yaml.safe_load(handle) or {}
+            names = payload.get("names", [])
+            if isinstance(names, dict):
+                names = [name for _, name in sorted(names.items(), key=lambda item: int(item[0]))]
+            if not isinstance(names, list):
+                return []
+            return [str(name) for name in names]
+        except Exception as exc:  # noqa: BLE001
+            log(f"读取类别文件失败，忽略：{exc}")
+            return []
 
     def _prepare_resnet_paths(
         self,
@@ -151,24 +236,29 @@ class TrainingWorkflowService:
         project_dir: str,
         resnet_data_path: str | None,
         selected_class_indices: list[int],
-        class_names: list[str],
+        selected_class_names: list[str],
         log,
     ) -> tuple[str | None, str | None]:
         if resnet_data_path:
             log(f"使用分类数据集：{resnet_data_path}")
             dataset_classes = self._list_resnet_classes(resnet_data_path)
             log(f"数据集类别：{dataset_classes}")
-            try:
-                return self._run_kfold_split(resnet_data_path, log)
-            except Exception as exc:  # noqa: BLE001
-                log(f"数据划分失败，改用回退方案：{exc}")
-                return self._fallback_project_split(resnet_data_path, project_dir, dataset_classes)
+            dataset_path = resnet_data_path + os.sep
+            return dataset_path, dataset_path
 
         crop_dir = os.path.join(project_dir, "resnet_crop")
         os.makedirs(crop_dir, exist_ok=True)
         log(f"选中训练类别索引：{selected_class_indices}")
-        log(f"训练类别：{class_names}")
-        selected_class_map = {idx: name for idx, name in zip(selected_class_indices, class_names)}
+        log(f"训练类别：{selected_class_names}")
+        selected_class_map = {idx: name for idx, name in zip(selected_class_indices, selected_class_names)}
+        if not selected_class_map and selected_class_indices:
+            fallback_names = self.dataset_service.class_names_for_indices(annotation_source, selected_class_indices)
+            selected_class_map = {idx: name for idx, name in zip(selected_class_indices, fallback_names)}
+
+        annotation_summary = self.dataset_service.annotation_class_summary(annotation_source)
+        log(f"当前已标注类别索引：{sorted(annotation_summary.used_classes)}")
+        log(f"训练类别映射：{selected_class_map}")
+
         summary = self.dataset_service.crop_resnet_dataset(
             annotation_source,
             gray_path_resolver,
@@ -176,25 +266,18 @@ class TrainingWorkflowService:
             selected_class_map,
         )
         if summary.crop_count == 0:
+            log(
+                f"分类裁剪失败统计：类别过滤={summary.skipped_missing_class}，"
+                f"无效框={summary.skipped_invalid_box}，图像读取失败={summary.skipped_image_error}"
+            )
             log("错误：未能裁剪出任何已标注区域")
             return None, None
 
         log(f"已裁剪 {summary.crop_count} 个标注区域")
-        try:
-            training_path, testing_path = self._run_kfold_split(crop_dir, log)
-            log("数据划分完成")
-            return training_path, testing_path
-        except Exception as exc:  # noqa: BLE001
-            log(f"数据划分失败，改用回退方案：{exc}")
-            return self._fallback_project_split(crop_dir, project_dir, sorted(summary.actual_classes))
-
-    def _run_kfold_split(self, source_dir: str, log) -> tuple[str, str]:
-        from ml.data_divider import kfold
-
-        log(f"正在划分数据：{source_dir}，k=10")
-        kfold(source_dir, k=10)
-        jour = f"{time.localtime().tm_mon}{time.localtime().tm_mday}"
-        return source_dir + f"_train_{jour}_0/", source_dir + f"_test_{jour}_0/"
+        log(f"分类裁剪类别统计：{summary.class_counts}")
+        log("分类训练直接使用裁剪结果目录，不再额外导出 train/test 中间目录")
+        crop_path = crop_dir + os.sep
+        return crop_path, crop_path
 
     def _list_resnet_classes(self, resnet_data_path: str) -> list[str]:
         class_names = []
@@ -203,36 +286,3 @@ class TrainingWorkflowService:
             if os.path.isdir(item_path):
                 class_names.append(item)
         return class_names
-
-    def _fallback_project_split(self, source_root: str, project_dir: str, class_names: list[str]) -> tuple[str, str]:
-        train_dir = os.path.join(project_dir, "train")
-        val_dir = os.path.join(project_dir, "val")
-        self._fallback_split_classification_dataset(source_root, train_dir, val_dir, class_names)
-        return train_dir + "/", val_dir + "/"
-
-    def _fallback_split_classification_dataset(
-        self,
-        source_root: str,
-        train_dir: str,
-        val_dir: str,
-        class_names: list[str],
-    ) -> None:
-        os.makedirs(train_dir, exist_ok=True)
-        os.makedirs(val_dir, exist_ok=True)
-        for class_name in class_names:
-            os.makedirs(os.path.join(train_dir, str(class_name)), exist_ok=True)
-            os.makedirs(os.path.join(val_dir, str(class_name)), exist_ok=True)
-
-        for class_name in class_names:
-            class_dir = os.path.join(source_root, str(class_name))
-            if not os.path.exists(class_dir):
-                continue
-            images = os.listdir(class_dir)
-            random.shuffle(images)
-            split_idx = max(1, int(len(images) * 0.9))
-            train_images = images[:split_idx]
-            val_images = images[split_idx:]
-            for image_name in train_images:
-                shutil.copy(os.path.join(class_dir, image_name), os.path.join(train_dir, str(class_name), image_name))
-            for image_name in val_images:
-                shutil.copy(os.path.join(class_dir, image_name), os.path.join(val_dir, str(class_name), image_name))

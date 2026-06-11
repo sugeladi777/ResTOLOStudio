@@ -14,6 +14,8 @@ DARK_BG = "#181818"
 PANEL_BG = "#232323"
 TEXT_COLOR = "#E4E4E4"
 BORDER_COLOR = "#3A3A3A"
+SELECTED_BG = "#5E768A"
+SELECTED_BORDER = "#7E98AE"
 
 
 class RequiredButton(QPushButton):
@@ -95,8 +97,9 @@ class StudioUiMixin:
                 border-top-right-radius: 2px;
             }}
             QTabBar::tab:selected {{
-                background-color: {BASE_COLOR};
-                color: #101010;
+                background-color: {SELECTED_BG};
+                color: #F5F7F8;
+                border-color: {SELECTED_BORDER};
             }}
             QTabBar::tab:hover {{
                 background-color: #2B2B2B;
@@ -143,6 +146,12 @@ class StudioUiMixin:
                 color: {TEXT_COLOR};
                 border-color: {BASE_COLOR};
             }}
+            QPushButton:focus {{
+                background-color: {PANEL_BG};
+                color: {TEXT_COLOR};
+                border: 1px solid {BASE_COLOR};
+                outline: none;
+            }}
             QPushButton:pressed {{
                 background-color: {DEEP_SHADE_COLOR};
                 color: {TEXT_COLOR};
@@ -153,13 +162,19 @@ class StudioUiMixin:
                 border-color: #333333;
             }}
             QPushButton[accent="true"] {{
-                background-color: {BASE_COLOR};
-                color: #101010;
-                border: 1px solid {ACCENT_COLOR};
+                background-color: {SELECTED_BG};
+                color: #F5F7F8;
+                border: 1px solid {SELECTED_BORDER};
             }}
             QPushButton[accent="true"]:hover {{
-                background-color: #B0B8BE;
-                border-color: #B0B8BE;
+                background-color: #70879A;
+                border-color: #8EA6BA;
+            }}
+            QPushButton[accent="true"]:focus {{
+                background-color: {SELECTED_BG};
+                color: #F5F7F8;
+                border: 1px solid {SELECTED_BORDER};
+                outline: none;
             }}
             QLineEdit, QSpinBox, QTextEdit {{
                 background-color: {DARK_BG};
@@ -198,8 +213,8 @@ class StudioUiMixin:
                 min-height: {self._scaled_int(30, scale)}px;
             }}
             QListWidget::item:selected {{
-                background-color: rgba(138, 147, 155, 0.85);
-                color: #101010;
+                background-color: rgba(94, 118, 138, 0.92);
+                color: #F5F7F8;
             }}
             QProgressBar {{
                 border: 1px solid {BORDER_COLOR};
@@ -279,6 +294,9 @@ class StudioUiMixin:
         btn = RequiredButton(text) if required else QPushButton(text)
         btn.clicked.connect(callback)
         btn.setCursor(Qt.PointingHandCursor)
+        btn.setAutoDefault(False)
+        btn.setDefault(False)
+        btn.setFocusPolicy(Qt.NoFocus)
         if accent:
             btn.setProperty("accent", "true")
         return btn

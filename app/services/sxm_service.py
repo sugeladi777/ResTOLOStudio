@@ -4,6 +4,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from hashlib import md5
 
 from app.utils.sxm_parser import load_sxm_as_image
 
@@ -21,6 +22,10 @@ class SxmConversionResult:
 class SxmService:
     """Converts SXM files into reusable image assets and metadata."""
 
+    def ensure_gray_image(self, file_path: str) -> str:
+        gray_path, _, _, _ = self._ensure_image_assets(file_path)
+        return gray_path
+
     def convert_files(self, files: list[str]) -> SxmConversionResult:
         result_files: list[str] = []
         metadata: dict[str, dict] = {}
@@ -36,18 +41,7 @@ class SxmService:
 
             has_sxm_files = True
             try:
-                img_gray, sxm = load_sxm_as_image(file_path, use_color=False)
-                img_color, _ = load_sxm_as_image(file_path, use_color=True)
-                if not img_gray:
-                    continue
-
-                tmp_dir = tempfile.mkdtemp(prefix="restolo_sxm_")
-                basename = Path(file_path).stem
-                gray_path = os.path.join(tmp_dir, f"{basename}_gray.png")
-                color_path = os.path.join(tmp_dir, f"{basename}_color.png")
-                img_gray.save(gray_path)
-                if img_color:
-                    img_color.save(color_path)
+                gray_path, color_path, sxm, _ = self._ensure_image_assets(file_path)
 
                 result_files.append(gray_path)
                 original_paths[file_path] = gray_path
@@ -80,3 +74,27 @@ class SxmService:
             has_sxm_files=has_sxm_files,
             logs=logs,
         )
+
+    def _ensure_image_assets(self, file_path: str):
+        img_gray, sxm = load_sxm_as_image(file_path, use_color=False)
+        img_color, _ = load_sxm_as_image(file_path, use_color=True)
+        if not img_gray:
+            raise ValueError(f"Unable to decode SXM image: {file_path}")
+
+        cache_dir = self._cache_dir_for(file_path)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        basename = Path(file_path).stem
+        gray_path = cache_dir / f"{basename}_gray.png"
+        color_path = cache_dir / f"{basename}_color.png"
+        if not gray_path.exists():
+            img_gray.save(gray_path)
+        if img_color and not color_path.exists():
+            img_color.save(color_path)
+        return str(gray_path), str(color_path), sxm, cache_dir
+
+    def _cache_dir_for(self, file_path: str) -> Path:
+        source = Path(file_path)
+        fingerprint = md5(
+            f"{source.resolve()}|{source.stat().st_mtime_ns}|{source.stat().st_size}".encode("utf-8")
+        ).hexdigest()[:12]
+        return Path(tempfile.gettempdir()) / "restolo_sxm_cache" / f"{source.stem}_{fingerprint}"

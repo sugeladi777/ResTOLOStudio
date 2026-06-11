@@ -19,6 +19,7 @@ import shutil
 import time
 import gc
 import copy as cp
+import threading
 
 #视觉部分
 import cv2
@@ -31,6 +32,16 @@ from PIL import Image
 
 #每次训练都给图像添加椒盐噪声，而且是不固定的那种
 #改变path2image函数
+
+
+def _recommended_dataloader_workers() -> int:
+    # On Windows, and especially when training is launched from a background Python thread,
+    # multiprocessing DataLoader workers are prone to hanging or exiting slowly.
+    if os.name == "nt":
+        return 0
+    if threading.current_thread() is not threading.main_thread():
+        return 0
+    return min(4, os.cpu_count() or 1)
 
 #------------------------图片的清洗和预处理-------------------------------
 #数据备份器:输入文件夹路径,一定要加自身的名字
@@ -458,7 +469,16 @@ def train_data_devider(mother_trace,batch_size=64):
     
     #制作数据集对象
     train_dataset = MyDataset(data_path,data_target)
-    train_dataloader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True,drop_last=False)
+    num_workers = _recommended_dataloader_workers()
+    pin_memory = torch.cuda.is_available()
+    train_dataloader = DataLoader(
+        dataset=train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+    )
     
     #输出
     return train_dataset,train_dataloader
@@ -562,12 +582,12 @@ def multi_cross_entropy(logits, y):
 #------------------------Fonction d'entraînement----------------
 '''
 training_path：训练集母文件夹路径,带/
-testing_path：测试集母文件夹路径,带/
+testing_path：兼容旧接口保留，当前分类训练不再使用独立验证集
 saving_path:保存集文件夹路径,带/
 net:网络...
 '''
 
-def training(training_path,testing_path,saving_path,net,pepper,avatar,Epochs=20,lr=0.001):
+def training(training_path,testing_path,saving_path,net,pepper,avatar,Epochs=20,lr=0.001,batch_size=64):
     ''' 
     #求均值和方差
     aver,std_err=normalizer(training_path)
@@ -586,10 +606,8 @@ def training(training_path,testing_path,saving_path,net,pepper,avatar,Epochs=20,
                     "_" + str(time.localtime().tm_min) + \
                         "_" + str(time.localtime().tm_sec)
     
-    #划分数据集,批已经分好，是字符串列表和numpy数组
-    batch_size=64
+    # 划分训练数据集，当前分类训练不再使用独立验证集
     train_dataset,train_dataloader=train_data_devider(training_path,batch_size=batch_size)
-    test_dataset,test_dataloader=test_data_devider(testing_path)
     
     # 打印设备信息
     print(f"\n=== 训练配置 ===")
@@ -602,7 +620,7 @@ def training(training_path,testing_path,saving_path,net,pepper,avatar,Epochs=20,
     print(f"学习率: {lr}")
     print(f"批次大小: {batch_size}")
     print(f"训练数据集大小: {len(train_dataset)}")
-    print(f"验证数据集大小: {len(test_dataset)}")
+    print("验证集: 不使用")
     print(f"================\n")
     
     #预装载
@@ -610,163 +628,121 @@ def training(training_path,testing_path,saving_path,net,pepper,avatar,Epochs=20,
     net.train()
     print(f"模型已加载到 {device} 设备")
     
-    #开始训练，预定义辅助量
-    step=0
-    Steps=[]
-    Loss_Steps=[]
-    Count_Epochs=[]
-    Loss_Epochs=[]
-    Err_Epochs=[]
-    
-    #训练------------------------------------------
-    Nan=False
-    Stop_indicator=False
-    for ii,(epreuve,epreuve_t) in enumerate(test_dataloader): #验证集
-        old_err=10000
-        #防止多训练
-        if Stop_indicator:
+    # 开始训练，预定义辅助量
+    step = 0
+    Steps = []
+    Loss_Steps = []
+    Count_Epochs = []
+    Loss_Epochs = []
+    Err_Epochs = []
+    Nan = False
+    old_err = float("inf")
+    loss_func = multi_cross_entropy
+    optimizer = torch.optim.Adam(
+        net.parameters(),
+        lr,
+        betas=(0.9, 0.999),
+        eps=1e-08,
+        weight_decay=lr/10,
+        amsgrad=True,
+    )
+
+    print("开始进入训练主循环")
+
+    for epoch in range(Epochs):
+        if Nan:
+            print("检测到 NaN，提前停止训练")
             break
-        else:
-            print("no stop")
-        #学习率退火策略
-        Stop_indicator=True
-        Schritt=0#步数计数
-        Schritte=[]#步数
-        Irrtum=[]#验证集误差
-        
-        for epoch in range(Epochs):
-            
-            #判断是否梯度爆炸
-            if Nan:
+
+        epoch_losses = []
+
+        for i, (batch, target) in enumerate(train_dataloader):
+            net.train()
+
+            epice=np.random.uniform(0,0.1,1)[0]*int(pepper)
+            data=path2image(batch,pepper=epice,avatar=avatar)
+            data=(data-127.5)/127.5
+            data=data.float()
+
+            data=data.to(device)
+            target=target.to(device)
+
+            prediction = net(data)
+            loss = loss_func(prediction,target).float()
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            loss_value = float(loss.detach().cpu().numpy())
+            if loss_value != loss_value:
+                Nan = True
                 break
-            else:
-                pass
-            
-            #训练的一些参量
-            loss_func=multi_cross_entropy
-            optimizer=torch.optim.Adam(net.parameters(),lr,betas=(0.9, 0.999),eps=1e-08,weight_decay=lr/10,amsgrad=True)
-            #optimizer = torch.optim.SGD(net.parameters(), lr, momentum=0.9,nesterov=True)
 
-            #训练
-            for i,(batch, target) in enumerate(train_dataloader):
-                #调训练模式，清内存
-                net.train()
-                gc.collect()
-                torch.cuda.empty_cache()
-                
-                #读取图片并归一化
-                epice=np.random.uniform(0,0.1,1)[0]*int(pepper)
-                data=path2image(batch,pepper=epice,avatar=avatar)
-                #data=(data-aver)/std_err
-                data=(data-127.5)/127.5
-                data=data.float()
-            
-                #往GPU上怼
-                data=data.to(device)
-                target=target.to(device)
-            
-                #喂给net训练数据 x, 输出预测值
-                prediction = net(data)
-                #计算预测值和y两者的误差
-                loss = loss_func(prediction,target).float()
-            
-                #训练网络三个最主要步骤
-                optimizer.zero_grad()   # 梯度清0
-                loss.backward()         # 误差反向传播，使用loss
-                optimizer.step()        # 神经网络参数更新
-            
-                #求出训练集平均误差大小并记录在案
-                loss=loss.detach().cpu().numpy()
-                if loss!=loss:
-                    Nan=True
-                else:
-                    pass
-                Loss_Steps.append(loss)
-                Steps.append(step)  
-                    
-                #存储验证集图片并归一化
-                val_batch=cp.deepcopy(epreuve)
-                val_target=cp.deepcopy(epreuve_t)
-                val_data=path2image(val_batch,pepper=0)
-                #val_data=(val_data-aver)/std_err
-                val_data=(val_data-127.5)/127.5
-                val_data=val_data.float()
+            epoch_losses.append(loss_value)
+            Loss_Steps.append(loss_value)
+            Steps.append(step)
+            step += 1
 
-                #往GPU上怼
-                val_data=val_data.to(device)
-                val_target=val_target.to(device)
-        
-                #每个epoch遍历结束计算验证集的误差----------------
-                #调测试模式，清内存
-                net.eval()
-                gc.collect()
-                torch.cuda.empty_cache()
-        
-                #喂给net训练数据 x, 输出预测值
-                prediction = net(val_data)
-                #计算预测值和y两者的误差，求出训练集平均误差大小并记录在案
-                err = loss_func(prediction,val_target).float()
-                err=err.detach().cpu().numpy()
-                
-                
-                #学习率衰减策略,存储误差，计算斜率
-                Schritt+=1
-                Schritte.append(Schritt)
-                Irrtum.append(err)
-                
-                #打印并写入output文档
-                log_message = f"Training Loss: {np.log10(loss):.8f} \t Training Steps: {i+1} \t Prediction Error: {np.log10(err):.8f} \t Epoch {epoch+1}"
-                print(log_message)
-                # 确保输出立即刷新到控制台
-                import sys
-                sys.stdout.flush()
-                
-                with open(saving_path+current_time+".txt",'a') as f:
-                    if epoch==0 and i==0:
-                        f.write("Batch Size:"+str(batch_size)+", lr:"+str(lr)+"\n")
-                    f.write("Training Loss:"+"%.8f"%np.log10(loss)+"\t Training Steps:"+str(i+1)+"\t Prediction Error:"+str('%.8f'%np.log10(err))+"\t Epoch"+str(epoch+1)+"\n")
-                    f.close() 
-            #print("Prediction Error:",'%.8f'%np.log10(err),'\t ','Epoch:',epoch+1)
-            
-            #断点保存,学习率衰减----------------------------------------
-            
-            if epoch % 20 == 0 or epoch == Epochs - 1:  # 每20个epoch保存一次，并且最后一个epoch必定保存
-                ckpt={
-                    'epoch': epoch,
-                    'model_state_dict': net.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': loss,
-                }
-                torch.save(ckpt,saving_path+"Model_"+current_time+".saving")
-                if old_err>=err:
-                    torch.save(ckpt,saving_path+"Model_best_"+current_time+".saving")
-                    old_err=err
-                else:
-                    pass
-            else:
-                pass
-            
-            if epoch==0 and i==1: #best
-                old_err=err
-            else:
-                pass
+        if not epoch_losses:
+            print(f"Epoch {epoch+1} 没有有效训练步，提前结束")
+            break
 
-            
-            #求出训练集平均误差大小并记录在案
-            Count_Epochs.append(epoch)
-            Loss_Epochs.append(loss)
-            Err_Epochs.append(err)
-            #print("原神启动！（原批蠕动）")
-            with open(saving_path+current_time+".txt",'a') as f:
-                f.write("Prediction Error:"+"%.8f"%np.log10(err)+"\t Epoch"+str(epoch+1)+"\n")
-                #f.write(str(k)+"\n")
-                f.close()
+        avg_train_loss = float(np.mean(epoch_losses))
+        # 保持旧日志格式兼容 UI 解析，但这里不再代表独立验证误差
+        err = avg_train_loss
+        log_message = (
+            f"Training Loss: {np.log10(avg_train_loss):.8f} \t "
+            f"Training Steps: {len(epoch_losses)} \t "
+            f"Prediction Error: {np.log10(err):.8f} \t Epoch {epoch+1}"
+        )
+        print(log_message)
+        import sys
+        sys.stdout.flush()
+
+        with open(saving_path+current_time+".txt",'a') as f:
+            if epoch == 0:
+                f.write("Batch Size:"+str(batch_size)+", lr:"+str(lr)+"\n")
+            f.write(
+                "Training Loss:"+"%.8f"%np.log10(avg_train_loss)+
+                "\t Training Steps:"+str(len(epoch_losses))+
+                "\t Prediction Error:"+str('%.8f'%np.log10(err))+
+                "\t Epoch"+str(epoch+1)+"\n"
+            )
+            f.write("Prediction Error:"+"%.8f"%np.log10(err)+"\t Epoch"+str(epoch+1)+"\n")
+
+        if epoch % 20 == 0 or epoch == Epochs - 1:
+            ckpt={
+                'epoch': epoch,
+                'model_state_dict': net.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': avg_train_loss,
+            }
+            torch.save(ckpt,saving_path+"Model_"+current_time+".saving")
+            if old_err >= avg_train_loss:
+                torch.save(ckpt,saving_path+"Model_best_"+current_time+".saving")
+                old_err=avg_train_loss
+
+        Count_Epochs.append(epoch)
+        Loss_Epochs.append(avg_train_loss)
+        Err_Epochs.append(err)
     
     #返回集合
     return Steps,Loss_Steps,Count_Epochs,Loss_Epochs,Err_Epochs
 
 
 #---------------------------主函数------------------------------------
+def _parse_bool_arg(value):
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"Invalid boolean value: {value}")
+
+
 def main():
     import argparse
     
@@ -777,13 +753,13 @@ def main():
     parser.add_argument('--saving_path', type=str, default='data/classification/log/', help='Saving path for models and logs')
     parser.add_argument('--target_size', type=tuple, default=(224, 224), help='Target image size')
     parser.add_argument('--target_format', type=str, default='.jpg', help='Target image format')
-    parser.add_argument('--pepper', type=bool, default=True, help='Whether to add pepper noise')
-    parser.add_argument('--avatar', type=bool, default=True, help='Whether to shuffle color channels')
+    parser.add_argument('--pepper', type=_parse_bool_arg, default=True, help='Whether to add pepper noise')
+    parser.add_argument('--avatar', type=_parse_bool_arg, default=True, help='Whether to shuffle color channels')
     parser.add_argument('--epochs', type=int, default=2001, help='Number of epochs')
     parser.add_argument('--lr', type=float, default=1e-6, help='Learning rate')
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
     parser.add_argument('--pretrained_model', type=str, default='', help='Path to pretrained ResNet model')
-    parser.add_argument('--imbalance', type=bool, default=True, help='Whether to handle class imbalance via oversampling')
+    parser.add_argument('--imbalance', type=_parse_bool_arg, default=True, help='Whether to handle class imbalance via oversampling')
     
     args = parser.parse_args()
     
@@ -805,9 +781,15 @@ def main():
     import os
     os.makedirs(saving_path, exist_ok=True)
     
-    #清洗数据集
+    normalized_training_path = os.path.abspath(training_path)
+    normalized_testing_path = os.path.abspath(testing_path)
+
+    # 清洗数据集；当训练集和测试集复用同一目录时只处理一次，避免重复改写同一批文件
     train_data_preparer(training_path,target_size=target_size,target_format=target_format)
-    train_data_preparer(testing_path,target_size=target_size,target_format=target_format)
+    if normalized_testing_path != normalized_training_path:
+        train_data_preparer(testing_path,target_size=target_size,target_format=target_format)
+    else:
+        print("训练集与测试集目录相同，跳过重复数据清洗")
         
     # 处理类别不平衡：过采样少数类（如果启用）
     if enable_imbalance:
@@ -843,7 +825,7 @@ def main():
             if 'layer3.6.conv1.weight' in state_dict:
                 # ResNet-101
                 print("检测到ResNet-101权重，使用ResNet-101模型")
-                resnet_model = models.resnet101(pretrained=False)
+                resnet_model = models.resnet101(weights=None)
             elif 'layer3.5.conv1.weight' in state_dict:
                 # 检查conv1的形状来判断是ResNet-50还是ResNet-34
                 conv1_weight = state_dict.get('layer3.5.conv1.weight')
@@ -851,19 +833,19 @@ def main():
                     if conv1_weight.shape[2] == 1 and conv1_weight.shape[3] == 1:
                         # Bottleneck (1x1 conv) - ResNet-50
                         print("检测到ResNet-50权重，使用ResNet-50模型")
-                        resnet_model = models.resnet50(pretrained=False)
+                        resnet_model = models.resnet50(weights=None)
                     else:
                         # BasicBlock (3x3 conv) - ResNet-34
                         print("检测到ResNet-34权重，使用ResNet-34模型")
-                        resnet_model = models.resnet34(pretrained=False)
+                        resnet_model = models.resnet34(weights=None)
                 else:
                     # 默认使用ResNet-50
                     print("无法检测模型类型，默认使用ResNet-50模型")
-                    resnet_model = models.resnet50(pretrained=False)
+                    resnet_model = models.resnet50(weights=None)
             elif 'layer3.1.conv1.weight' in state_dict:
                 # ResNet-18
                 print("检测到ResNet-18权重，使用ResNet-18模型")
-                resnet_model = models.resnet18(pretrained=False)
+                resnet_model = models.resnet18(weights=None)
             else:
                 # 尝试通过其他层的权重形状来判断
                 if 'layer1.0.conv1.weight' in state_dict:
@@ -872,30 +854,39 @@ def main():
                         # BasicBlock (3x3 conv) - ResNet-18 or ResNet-34
                         if 'layer3.5.conv1.weight' in state_dict:
                             print("检测到ResNet-34权重，使用ResNet-34模型")
-                            resnet_model = models.resnet34(pretrained=False)
+                            resnet_model = models.resnet34(weights=None)
                         else:
                             print("检测到ResNet-18权重，使用ResNet-18模型")
-                            resnet_model = models.resnet18(pretrained=False)
+                            resnet_model = models.resnet18(weights=None)
                     else:
                         # Bottleneck (1x1 conv) - ResNet-50 or ResNet-101
                         if 'layer3.6.conv1.weight' in state_dict:
                             print("检测到ResNet-101权重，使用ResNet-101模型")
-                            resnet_model = models.resnet101(pretrained=False)
+                            resnet_model = models.resnet101(weights=None)
                         else:
                             print("检测到ResNet-50权重，使用ResNet-50模型")
-                            resnet_model = models.resnet50(pretrained=False)
+                            resnet_model = models.resnet50(weights=None)
                 else:
                     # 默认使用ResNet-50
                     print("无法检测模型类型，默认使用ResNet-50模型")
-                    resnet_model = models.resnet50(pretrained=False)
+                    resnet_model = models.resnet50(weights=None)
             
-            # 先替换fc层为当前数据集的类别数，避免加载时的维度不匹配错误
+            # 先替换 fc 层为当前数据集的类别数
             num_ftrs = resnet_model.fc.in_features
             resnet_model.fc = torch.nn.Linear(num_ftrs, class_num)
 
-            # 加载模型权重（不严格匹配，跳过fc层）
-            resnet_model.load_state_dict(state_dict, strict=False)
+            # 迁移学习时跳过旧任务的分类头，只加载共享骨干权重
+            filtered_state_dict = {
+                key: value
+                for key, value in state_dict.items()
+                if key not in {"fc.weight", "fc.bias"}
+            }
+            missing_keys, unexpected_keys = resnet_model.load_state_dict(filtered_state_dict, strict=False)
             print(f"成功加载预训练模型: {args.pretrained_model}")
+            if missing_keys:
+                print(f"跳过并重建的层: {missing_keys}")
+            if unexpected_keys:
+                print(f"未使用的检查点参数: {unexpected_keys}")
         except Exception as e:
             print(f"加载预训练模型失败: {e}")
             # 加载失败后仍需替换fc层
@@ -905,23 +896,34 @@ def main():
     else:
         # 默认使用ResNet-50
         print("未提供预训练模型，默认使用ResNet-50模型")
-        resnet_model = models.resnet50(pretrained=True)
+        resnet_model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
         # 默认模型需要替换fc层
         num_ftrs = resnet_model.fc.in_features
         resnet_model.fc = torch.nn.Linear(num_ftrs, class_num)
     
-    Steps,Loss_Steps,Count_Epochs,Loss_Epochs,Err_Epochs=training(training_path,testing_path,saving_path,resnet_model,pepper,avatar,Epochs=epochs,lr=lr)
-    current_time=str(time.localtime().tm_year) + \
-                            "_" + str(time.localtime().tm_mon) + \
-                                "_" + str(time.localtime().tm_mday) + \
-                                    "_" + str(time.localtime().tm_hour) + \
-                                        "_" + str(time.localtime().tm_min) + \
-                                            "_" + str(time.localtime().tm_sec) + "_"
-    np.save(saving_path+NAME+"_"+current_time+"Steps_aff.npy",Steps)
-    np.save(saving_path+NAME+"_"+current_time+"Loss_Steps_aff.npy",Loss_Steps)
-    np.save(saving_path+NAME+"_"+current_time+"Count_Epochs_aff.npy",Count_Epochs)
-    np.save(saving_path+NAME+"_"+current_time+"Loss_Epochs_aff.npy",Loss_Epochs)
-    np.save(saving_path+NAME+"_"+current_time+"Err_Epochs_aff.npy",Err_Epochs)
+    Steps,Loss_Steps,Count_Epochs,Loss_Epochs,Err_Epochs=training(
+        training_path,
+        testing_path,
+        saving_path,
+        resnet_model,
+        pepper,
+        avatar,
+        Epochs=epochs,
+        lr=lr,
+        batch_size=batch_size,
+    )
+    torch.save(
+        {
+            'epoch': epochs - 1,
+            'model_state_dict': resnet_model.state_dict(),
+            'steps': Steps,
+            'loss_steps': Loss_Steps,
+            'count_epochs': Count_Epochs,
+            'loss_epochs': Loss_Epochs,
+            'err_epochs': Err_Epochs,
+        },
+        os.path.join(saving_path, "Model_last.saving"),
+    )
     '''
     #作图观察
     #误差随训练步数的关系

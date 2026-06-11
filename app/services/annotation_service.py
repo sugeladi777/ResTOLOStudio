@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import yaml
@@ -71,11 +72,68 @@ class AnnotationService:
             return None, []
 
         normalized = state.normalized()
+        self._copy_annotation_images(output_dir, normalized)
         for image_path, boxes in normalized.annotations.items():
             self._write_annotation_file(output_dir, image_path, boxes)
 
         _, used_class_names = self._write_classes_yaml(output_dir, normalized)
         return output_dir, used_class_names
+
+    def load_saved_annotation_state(self, directory: str) -> AnnotationState | None:
+        base_dir = self._ensure_output_directory(directory)
+        if base_dir is None:
+            return None
+
+        image_paths = self._saved_image_paths(base_dir)
+        if not image_paths:
+            return None
+
+        class_names = self._read_classes_yaml(base_dir / "classes.yaml")
+        state = self.create_state(image_paths, class_names=class_names)
+        annotation_paths = [str(path) for path in sorted(base_dir.glob("*.txt"))]
+        if not annotation_paths:
+            return state
+        return self.load_annotation_files(state, annotation_paths)
+
+    def discover_annotation_files(self, image_paths: list[str], candidate_directories: list[str]) -> list[str]:
+        if not image_paths:
+            return []
+
+        images = [str(Path(path)) for path in image_paths]
+        discovered: list[str] = []
+        seen: set[str] = set()
+        for directory in candidate_directories:
+            if not directory:
+                continue
+            base_dir = Path(directory)
+            if not base_dir.exists() or not base_dir.is_dir():
+                continue
+            for ann_path in sorted(base_dir.glob("*.txt")):
+                resolved = str(ann_path)
+                if resolved in seen:
+                    continue
+                if self._match_annotation_image(images, resolved) is None:
+                    continue
+                seen.add(resolved)
+                discovered.append(resolved)
+        return discovered
+
+    def discover_classes_yaml(self, candidate_directories: list[str]) -> str:
+        seen: set[str] = set()
+        for directory in candidate_directories:
+            if not directory:
+                continue
+            base_dir = Path(directory)
+            if not base_dir.exists() or not base_dir.is_dir():
+                continue
+            for candidate in (base_dir / "classes.yaml", base_dir / "classes.yml"):
+                resolved = str(candidate)
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                if candidate.exists():
+                    return resolved
+        return ""
 
     def _parse_annotation_file(self, ann_path: str) -> list[AnnotationBox]:
         boxes: list[AnnotationBox] = []
@@ -123,6 +181,37 @@ class AnnotationService:
             for box in boxes:
                 handle.write(f"{box.cls} {box.x} {box.y} {box.w} {box.h}\n")
         return ann_path
+
+    def _copy_annotation_images(self, output_dir: Path, state: AnnotationState) -> None:
+        for image_path in state.images:
+            source = Path(image_path)
+            if not source.exists():
+                continue
+            target = output_dir / source.name
+            if source.resolve() == target.resolve():
+                continue
+            shutil.copy2(source, target)
+
+    def _saved_image_paths(self, directory: Path) -> list[str]:
+        image_paths: list[str] = []
+        for pattern in ("*.jpg", "*.jpeg", "*.png", "*.bmp"):
+            image_paths.extend(str(path) for path in sorted(directory.glob(pattern)))
+        return image_paths
+
+    def _read_classes_yaml(self, path: Path) -> list[str] | None:
+        if not path.exists():
+            return None
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                payload = yaml.safe_load(handle) or {}
+            names = payload.get("names", [])
+            if isinstance(names, dict):
+                names = [name for _, name in sorted(names.items(), key=lambda item: int(item[0]))]
+            if not isinstance(names, list):
+                return None
+            return [str(name) for name in names]
+        except Exception:  # noqa: BLE001
+            return None
 
     def _write_classes_yaml(self, output_dir: Path, state: AnnotationState) -> tuple[Path, list[str]]:
         used_classes = sorted(self.used_classes(state))

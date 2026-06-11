@@ -19,6 +19,10 @@ class AnnotationClassSummary:
 class ResnetCropSummary:
     crop_count: int
     actual_classes: set[str]
+    class_counts: dict[str, int]
+    skipped_missing_class: int = 0
+    skipped_invalid_box: int = 0
+    skipped_image_error: int = 0
 
 
 class DatasetService:
@@ -89,6 +93,20 @@ class DatasetService:
                 class_names.append(str(idx))
         return class_names
 
+    def remap_class_indices(
+        self,
+        annotation_source,
+        class_indices: list[int] | None = None,
+    ) -> tuple[dict[int, int], list[str]]:
+        state = self._state(annotation_source)
+        if class_indices is None:
+            class_indices = sorted(self.annotation_class_summary(state).used_classes)
+
+        normalized_indices = sorted(dict.fromkeys(int(idx) for idx in class_indices))
+        class_map = {old_idx: new_idx for new_idx, old_idx in enumerate(normalized_indices)}
+        class_names = self.class_names_for_indices(state, normalized_indices)
+        return class_map, class_names
+
     def optimal_image_size(self, images: list[str]) -> int:
         sizes = []
         for image_path in images:
@@ -112,14 +130,7 @@ class DatasetService:
     def split_yolo_images(self, annotated_images: list[str]) -> tuple[list[str], list[str]]:
         shuffled_images = annotated_images.copy()
         random.shuffle(shuffled_images)
-        total_annotated = len(shuffled_images)
-        if total_annotated == 1:
-            return shuffled_images, shuffled_images
-        if total_annotated <= 4:
-            return shuffled_images[1:], shuffled_images[:1]
-
-        val_size = max(1, int(total_annotated * 0.1))
-        return shuffled_images[val_size:], shuffled_images[:val_size]
+        return shuffled_images, shuffled_images
 
     def write_yolo_split(
         self,
@@ -128,6 +139,7 @@ class DatasetService:
         image_paths: list[str],
         images_dir: str,
         labels_dir: str,
+        class_index_map: dict[int, int] | None = None,
     ) -> None:
         state = self._state(annotation_source)
         os.makedirs(images_dir, exist_ok=True)
@@ -140,6 +152,10 @@ class DatasetService:
             with open(label_path, "w", encoding="utf-8") as handle:
                 for box in state.annotations[image_path]:
                     cls, x, y, w, h = box.to_tuple() if hasattr(box, "to_tuple") else box
+                    if class_index_map is not None:
+                        if cls not in class_index_map:
+                            continue
+                        cls = class_index_map[cls]
                     handle.write(f"{cls} {x} {y} {w} {h}\n")
 
     def crop_resnet_dataset(
@@ -150,11 +166,24 @@ class DatasetService:
         selected_class_map: dict[int, str],
     ) -> ResnetCropSummary:
         state = self._state(annotation_source)
+        if not selected_class_map:
+            summary = self.annotation_class_summary(state)
+            selected_class_map = {
+                idx: name
+                for idx, name in enumerate(summary.class_names)
+                if idx in summary.used_classes
+            }
+        os.makedirs(output_dir, exist_ok=True)
+        self._clear_resnet_crop_output(output_dir)
         for class_name in selected_class_map.values():
             os.makedirs(os.path.join(output_dir, str(class_name)), exist_ok=True)
 
         crop_count = 0
         actual_classes: set[str] = set()
+        class_counts: dict[str, int] = {}
+        skipped_missing_class = 0
+        skipped_invalid_box = 0
+        skipped_image_error = 0
         for image_path in state.images:
             annotations = state.annotations.get(image_path)
             if not annotations:
@@ -166,20 +195,42 @@ class DatasetService:
                     for box in annotations:
                         cls, x, y, w, h = box.to_tuple() if hasattr(box, "to_tuple") else box
                         if cls not in selected_class_map:
+                            skipped_missing_class += 1
                             continue
                         x1 = max(0, int((x - w / 2) * width))
                         y1 = max(0, int((y - h / 2) * height))
                         x2 = min(width, int((x + w / 2) * width))
                         y2 = min(height, int((y + h / 2) * height))
                         if x2 <= x1 or y2 <= y1:
+                            skipped_invalid_box += 1
                             continue
                         crop = img.crop((x1, y1, x2, y2))
+                        if crop.mode not in ("RGB", "L"):
+                            crop = crop.convert("RGB")
                         class_name = str(selected_class_map[cls])
                         actual_classes.add(class_name)
-                        crop_path = os.path.join(output_dir, class_name, f"crop_{crop_count}.jpg")
+                        class_counts[class_name] = class_counts.get(class_name, 0) + 1
+                        class_crop_index = class_counts[class_name] - 1
+                        crop_path = os.path.join(output_dir, class_name, f"crop_{class_crop_index}.jpg")
                         crop.save(crop_path)
                         crop_count += 1
             except Exception:  # noqa: BLE001
+                skipped_image_error += 1
                 continue
 
-        return ResnetCropSummary(crop_count=crop_count, actual_classes=actual_classes)
+        return ResnetCropSummary(
+            crop_count=crop_count,
+            actual_classes=actual_classes,
+            class_counts=class_counts,
+            skipped_missing_class=skipped_missing_class,
+            skipped_invalid_box=skipped_invalid_box,
+            skipped_image_error=skipped_image_error,
+        )
+
+    def _clear_resnet_crop_output(self, output_dir: str) -> None:
+        for item in os.listdir(output_dir):
+            item_path = os.path.join(output_dir, item)
+            if os.path.isdir(item_path):
+                shutil.rmtree(item_path)
+            else:
+                os.remove(item_path)

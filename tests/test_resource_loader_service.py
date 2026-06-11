@@ -41,6 +41,7 @@ def test_resource_loader_service_applies_default_paths(tmp_path: Path):
     infer_yolo = DummyTarget()
     train_resnet = DummyTarget()
     infer_resnet = DummyTarget()
+    train_classes = DummyTarget()
     infer_classes = DummyTarget()
 
     service.apply_default_model_paths(
@@ -51,6 +52,7 @@ def test_resource_loader_service_applies_default_paths(tmp_path: Path):
         train_resnet,
         infer_resnet,
         infer_classes,
+        train_classes,
     )
 
     assert manager.yolo_loaded == [str(paths.default_yolo_model_path)]
@@ -59,6 +61,7 @@ def test_resource_loader_service_applies_default_paths(tmp_path: Path):
     assert infer_yolo.value == str(paths.default_yolo_model_path)
     assert train_resnet.value == str(paths.default_resnet_model_path)
     assert infer_resnet.value == str(paths.default_resnet_model_path)
+    assert train_classes.value == str(paths.default_classes_path)
     assert infer_classes.value == str(paths.default_classes_path)
 
 

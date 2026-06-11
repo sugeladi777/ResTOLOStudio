@@ -11,7 +11,9 @@ from app.windows import ReSTOLOStudioWindow
 
 def create_application(project_root: Path | None = None) -> tuple[QApplication, ReSTOLOStudioWindow]:
     root = Path(project_root or Path(__file__).resolve().parents[1])
-    app = QApplication(sys.argv)
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
     runtime = AppRuntime.create(root)
     window = ReSTOLOStudioWindow(runtime)
     return app, window

@@ -11,6 +11,9 @@ build/
 dist/
 *.egg-info/
 sessions/
+artifacts/
+ml/runs/
+scene/
 restolo_studio.json
 ml/SR/runs/
 ml/SR/results/

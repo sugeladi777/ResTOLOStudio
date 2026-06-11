@@ -52,6 +52,27 @@ def _create_collapsible_section(title: str, content: QWidget, expanded: bool = F
     return container
 
 
+def _create_status_group(window, *labels: QLabel) -> QWidget:
+    group = window.create_group("当前状态")
+    layout = QVBoxLayout()
+    layout.setSpacing(4)
+    for label in labels:
+        layout.addWidget(label)
+    group.layout().addLayout(layout)
+    return group
+
+
+def _add_widgets(layout, *widgets: QWidget) -> None:
+    for widget in widgets:
+        layout.addWidget(widget)
+
+
+def _add_labeled_paths(window, layout, *items: tuple[str, QWidget]) -> None:
+    for label_text, widget in items:
+        layout.addWidget(window.create_label(label_text))
+        layout.addWidget(widget)
+
+
 def _build_hidden_runtime_panel(window) -> QWidget:
     panel = QWidget()
     layout = QVBoxLayout(panel)
@@ -63,6 +84,27 @@ def _build_hidden_runtime_panel(window) -> QWidget:
 
     panel.hide()
     return panel
+
+
+def _wrap_tab_with_scroll(content: QWidget) -> QScrollArea:
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.NoFrame)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    scroll.setStyleSheet(
+        f"""
+        QScrollArea {{
+            background-color: {PANEL_BG};
+            border: none;
+        }}
+        QScrollArea > QWidget > QWidget {{
+            background-color: {PANEL_BG};
+        }}
+        """
+    )
+    content.setStyleSheet("background-color: transparent;")
+    scroll.setWidget(content)
+    return scroll
 
 
 def _build_annotation_tab(window):
@@ -103,6 +145,13 @@ def _build_annotation_tab(window):
     window.annotation_status_detail = QLabel("")
     window.annotation_classes_detail = QLabel("")
     window.inference_input_status_detail = QLabel("")
+    layout.addWidget(
+        _create_status_group(
+            window,
+            window.annotation_status_detail,
+            window.annotation_classes_detail,
+        )
+    )
     layout.addStretch()
     return tab
 
@@ -168,8 +217,11 @@ def _build_training_tab(window):
     window.train_yolo_model_path = window.create_line_edit("检测模型路径")
     window.train_load_resnet_model_btn = window.create_button("加载分类模型", window.load_resnet_model)
     window.train_resnet_model_path = window.create_line_edit("分类模型路径")
-    model_layout.addWidget(window.train_load_yolo_model_btn)
-    model_layout.addWidget(window.train_load_resnet_model_btn)
+    _add_widgets(
+        model_layout,
+        window.train_load_yolo_model_btn,
+        window.train_load_resnet_model_btn,
+    )
     model_group.layout().addLayout(model_layout)
     layout.addWidget(model_group)
 
@@ -177,23 +229,49 @@ def _build_training_tab(window):
     params_layout = QVBoxLayout()
     params_layout.setSpacing(4)
 
-    epochs_layout = QHBoxLayout()
-    epochs_layout.addWidget(window.create_label("轮数"))
-    window.epochs_spin = QSpinBox()
-    window.epochs_spin.setRange(1, 1000)
-    window.epochs_spin.setValue(300)
-    window.epochs_spin.setButtonSymbols(QSpinBox.NoButtons)
-    epochs_layout.addWidget(window.epochs_spin)
-    params_layout.addLayout(epochs_layout)
+    yolo_title_layout = QHBoxLayout()
+    yolo_title_layout.addWidget(window.create_label("检测模型"))
+    params_layout.addLayout(yolo_title_layout)
 
-    batch_layout = QHBoxLayout()
-    batch_layout.addWidget(window.create_label("批大小"))
-    window.batch_spin = QSpinBox()
-    window.batch_spin.setRange(1, 128)
-    window.batch_spin.setValue(16)
-    window.batch_spin.setButtonSymbols(QSpinBox.NoButtons)
-    batch_layout.addWidget(window.batch_spin)
-    params_layout.addLayout(batch_layout)
+    yolo_epochs_layout = QHBoxLayout()
+    yolo_epochs_layout.addWidget(window.create_label("检测轮数"))
+    window.yolo_epochs_spin = QSpinBox()
+    window.yolo_epochs_spin.setRange(1, 1000)
+    window.yolo_epochs_spin.setValue(300)
+    window.yolo_epochs_spin.setButtonSymbols(QSpinBox.NoButtons)
+    yolo_epochs_layout.addWidget(window.yolo_epochs_spin)
+    params_layout.addLayout(yolo_epochs_layout)
+
+    yolo_batch_layout = QHBoxLayout()
+    yolo_batch_layout.addWidget(window.create_label("检测批大小"))
+    window.yolo_batch_spin = QSpinBox()
+    window.yolo_batch_spin.setRange(1, 128)
+    window.yolo_batch_spin.setValue(16)
+    window.yolo_batch_spin.setButtonSymbols(QSpinBox.NoButtons)
+    yolo_batch_layout.addWidget(window.yolo_batch_spin)
+    params_layout.addLayout(yolo_batch_layout)
+
+    resnet_title_layout = QHBoxLayout()
+    resnet_title_layout.addWidget(window.create_label("分类模型"))
+    params_layout.addLayout(resnet_title_layout)
+
+    resnet_epochs_layout = QHBoxLayout()
+    resnet_epochs_layout.addWidget(window.create_label("分类轮数"))
+    window.resnet_epochs_spin = QSpinBox()
+    window.resnet_epochs_spin.setRange(1, 1000)
+    window.resnet_epochs_spin.setValue(300)
+    window.resnet_epochs_spin.setButtonSymbols(QSpinBox.NoButtons)
+    resnet_epochs_layout.addWidget(window.resnet_epochs_spin)
+    params_layout.addLayout(resnet_epochs_layout)
+
+    resnet_batch_layout = QHBoxLayout()
+    resnet_batch_layout.addWidget(window.create_label("分类批大小"))
+    window.resnet_batch_spin = QSpinBox()
+    window.resnet_batch_spin.setRange(1, 128)
+    window.resnet_batch_spin.setValue(64)
+    window.resnet_batch_spin.setButtonSymbols(QSpinBox.NoButtons)
+    resnet_batch_layout.addWidget(window.resnet_batch_spin)
+    params_layout.addLayout(resnet_batch_layout)
 
     imbalance_layout = QHBoxLayout()
     imbalance_layout.addWidget(window.create_label("类别均衡"))
@@ -207,9 +285,13 @@ def _build_training_tab(window):
     advanced_group = window.create_group("路径与高级设置")
     advanced_layout = QVBoxLayout()
     advanced_layout.setSpacing(4)
-    advanced_layout.addWidget(window.train_resnet_data_path)
-    advanced_layout.addWidget(window.train_yolo_model_path)
-    advanced_layout.addWidget(window.train_resnet_model_path)
+    _add_labeled_paths(
+        window,
+        advanced_layout,
+        ("分类数据目录", window.train_resnet_data_path),
+        ("检测模型路径", window.train_yolo_model_path),
+        ("分类模型路径", window.train_resnet_model_path),
+    )
     advanced_layout.addWidget(params_group)
     advanced_group.layout().addLayout(advanced_layout)
     layout.addWidget(_create_collapsible_section("更多设置", advanced_group, expanded=False))
@@ -227,6 +309,14 @@ def _build_training_tab(window):
     window.training_dataset_status_detail = QLabel("")
     window.training_model_status_detail = QLabel("")
     window.training_run_status_detail = QLabel("")
+    layout.addWidget(
+        _create_status_group(
+            window,
+            window.training_dataset_status_detail,
+            window.training_model_status_detail,
+            window.training_run_status_detail,
+        )
+    )
     layout.addStretch()
     return tab
 
@@ -252,8 +342,11 @@ def _build_inference_tab(window):
     window.infer_yolo_model_path = window.create_line_edit("检测模型路径")
     window.infer_load_resnet_model_btn = window.create_button("加载分类模型", window.load_resnet_model, required=True)
     window.infer_resnet_model_path = window.create_line_edit("分类模型路径")
-    model_layout.addWidget(window.infer_load_yolo_model_btn)
-    model_layout.addWidget(window.infer_load_resnet_model_btn)
+    _add_widgets(
+        model_layout,
+        window.infer_load_yolo_model_btn,
+        window.infer_load_resnet_model_btn,
+    )
     model_group.layout().addLayout(model_layout)
     layout.addWidget(model_group)
 
@@ -263,9 +356,13 @@ def _build_inference_tab(window):
     window.infer_load_classes_btn = window.create_button("加载类别文件", window.load_classes_file)
     window.infer_classes_path = window.create_line_edit("类别文件路径")
     advanced_layout.addWidget(window.infer_load_classes_btn)
-    advanced_layout.addWidget(window.infer_yolo_model_path)
-    advanced_layout.addWidget(window.infer_resnet_model_path)
-    advanced_layout.addWidget(window.infer_classes_path)
+    _add_labeled_paths(
+        window,
+        advanced_layout,
+        ("检测模型路径", window.infer_yolo_model_path),
+        ("分类模型路径", window.infer_resnet_model_path),
+        ("类别文件路径", window.infer_classes_path),
+    )
     advanced_group.layout().addLayout(advanced_layout)
     layout.addWidget(_create_collapsible_section("更多设置", advanced_group, expanded=False))
 
@@ -280,6 +377,15 @@ def _build_inference_tab(window):
     window.inference_batch_status_detail = QLabel("")
     window.inference_model_status_detail = QLabel("")
     window.inference_result_status_detail = QLabel("")
+    layout.addWidget(
+        _create_status_group(
+            window,
+            window.inference_input_status_detail,
+            window.inference_batch_status_detail,
+            window.inference_model_status_detail,
+            window.inference_result_status_detail,
+        )
+    )
     layout.addStretch()
     return tab
 
@@ -378,9 +484,9 @@ def initialize_studio_shell(window):
     window.tab_widget = QTabWidget()
     window.tab_widget.tabBar().setChangeCurrentOnDrag(False)
     window.tab_widget.setUsesScrollButtons(False)
-    window.tab_widget.addTab(_build_annotation_tab(window), "标注")
-    window.tab_widget.addTab(_build_training_tab(window), "训练")
-    window.tab_widget.addTab(_build_inference_tab(window), "推理")
+    window.tab_widget.addTab(_wrap_tab_with_scroll(_build_annotation_tab(window)), "标注")
+    window.tab_widget.addTab(_wrap_tab_with_scroll(_build_training_tab(window)), "训练")
+    window.tab_widget.addTab(_wrap_tab_with_scroll(_build_inference_tab(window)), "推理")
     window.tab_widget.currentChanged.connect(window.on_tab_changed)
 
     left_layout = QVBoxLayout()

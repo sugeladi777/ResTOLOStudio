@@ -16,8 +16,7 @@ class ResultStoreService:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_label = (label or "session").replace(" ", "_")
         session_dir = self.sessions_root / f"{stamp}_{safe_label}"
-        for name in ("scan", "inference", "training", "logs"):
-            (session_dir / name).mkdir(parents=True, exist_ok=True)
+        self._ensure_session_directories(session_dir)
         manifest = SessionRecord(
             id=session_dir.name,
             label=label or "session",
@@ -25,6 +24,12 @@ class ResultStoreService:
             path=str(session_dir),
         )
         self._write_manifest(session_dir, manifest)
+        return manifest
+
+    def rename_session(self, session_id: str, label: str) -> SessionRecord:
+        manifest = self.load_manifest(session_id)
+        manifest.label = label or manifest.label
+        self._write_manifest(self.session_dir(session_id), manifest)
         return manifest
 
     def session_dir(self, session_id: str) -> Path:
@@ -36,12 +41,20 @@ class ResultStoreService:
     def inference_dir(self, session_id: str) -> Path:
         return self.session_dir(session_id) / "inference"
 
+    def training_dir(self, session_id: str) -> Path:
+        return self.session_dir(session_id) / "training"
+
+    def annotation_dir(self, session_id: str) -> Path:
+        return self.session_dir(session_id) / "annotation"
+
     def manifest_path(self, session_id: str) -> Path:
         return self.session_dir(session_id) / "session_manifest.json"
 
     def load_manifest(self, session_id: str) -> SessionRecord:
+        session_dir = self.session_dir(session_id)
+        self._ensure_session_directories(session_dir)
         payload = json.loads(self.manifest_path(session_id).read_text(encoding="utf-8"))
-        payload["path"] = str(self.session_dir(session_id))
+        payload["path"] = str(session_dir)
         return SessionRecord.from_dict(payload)
 
     def _write_manifest(self, session_dir: Path, payload: SessionRecord) -> None:
@@ -75,9 +88,14 @@ class ResultStoreService:
         results = []
         for manifest_path in sorted(self.sessions_root.glob("*/session_manifest.json"), reverse=True):
             try:
+                self._ensure_session_directories(manifest_path.parent)
                 payload = json.loads(manifest_path.read_text(encoding="utf-8"))
             except Exception:
                 continue
             payload["path"] = str(manifest_path.parent)
             results.append(SessionRecord.from_dict(payload))
         return results
+
+    def _ensure_session_directories(self, session_dir: Path) -> None:
+        for name in ("scan", "inference", "training", "annotation", "logs"):
+            (session_dir / name).mkdir(parents=True, exist_ok=True)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 
-import cv2
 import numpy as np
 from PyQt5.QtCore import QPoint, QTimer, Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPalette, QPixmap
@@ -18,8 +17,14 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from PIL import Image, ImageDraw
 
 from app.core import AnnotationBox, AnnotationState
+
+try:
+    import cv2
+except ImportError:  # pragma: no cover - optional dependency in lightweight test envs
+    cv2 = None
 
 
 BASE_COLOR = "#8A939B"
@@ -31,6 +36,8 @@ DARK_BG = "#181818"
 PANEL_BG = "#232323"
 TEXT_COLOR = "#E8E8E8"
 BORDER_COLOR = "#3A3A3A"
+SELECTED_BG = "#5E768A"
+SELECTED_BORDER = "#7E98AE"
 
 
 def _debug(message: str) -> None:
@@ -105,14 +112,20 @@ class AnnotationTool(QWidget):
                 color: {TEXT_COLOR};
                 border-color: {BASE_COLOR};
             }}
+            QPushButton:focus {{
+                background-color: {PANEL_BG};
+                color: {TEXT_COLOR};
+                border: 1px solid {BASE_COLOR};
+                outline: none;
+            }}
             QPushButton:pressed {{
                 background-color: {DEEP_SHADE_COLOR};
                 color: {TEXT_COLOR};
             }}
             QPushButton:checked {{
-                background-color: {BASE_COLOR};
-                color: #101010;
-                border: 2px solid {ACCENT_COLOR};
+                background-color: {SELECTED_BG};
+                color: #F5F7F8;
+                border: 2px solid {SELECTED_BORDER};
             }}
             QLabel {{
                 color: {TEXT_COLOR};
@@ -149,8 +162,12 @@ class AnnotationTool(QWidget):
 
         for button in (self.prev_btn, self.next_btn):
             button.setCursor(Qt.PointingHandCursor)
+            button.setAutoDefault(False)
+            button.setDefault(False)
+            button.setFocusPolicy(Qt.NoFocus)
             self.control_layout.addWidget(button)
 
+        self.more_btn.setFocusPolicy(Qt.NoFocus)
         self.control_layout.addWidget(self.more_btn)
         self.control_layout.addStretch()
         layout.addLayout(self.control_layout)
@@ -195,14 +212,20 @@ class AnnotationTool(QWidget):
                 color: {TEXT_COLOR};
                 border-color: {BASE_COLOR};
             }}
+            QScrollArea QPushButton:focus {{
+                background-color: {PANEL_BG};
+                color: {TEXT_COLOR};
+                border: 1px solid {BASE_COLOR};
+                outline: none;
+            }}
             QScrollArea QPushButton:pressed {{
                 background-color: {DEEP_SHADE_COLOR};
                 color: {TEXT_COLOR};
             }}
             QScrollArea QPushButton:checked {{
-                background-color: {BASE_COLOR};
-                color: #101010;
-                border: 2px solid {ACCENT_COLOR};
+                background-color: {SELECTED_BG};
+                color: #F5F7F8;
+                border: 2px solid {SELECTED_BORDER};
             }}
             """
         )
@@ -225,16 +248,25 @@ class AnnotationTool(QWidget):
             btn.clicked.connect(lambda checked, cls=i: self.select_class(cls))
             btn.mouseDoubleClickEvent = lambda event, cls=i: self.edit_class_name(cls)
             btn.setCursor(Qt.PointingHandCursor)
+            btn.setAutoDefault(False)
+            btn.setDefault(False)
+            btn.setFocusPolicy(Qt.NoFocus)
             self.class_layout.addWidget(btn)
             self.class_buttons.append(btn)
 
         self.add_btn = QPushButton("+")
         self.add_btn.setCursor(Qt.PointingHandCursor)
+        self.add_btn.setAutoDefault(False)
+        self.add_btn.setDefault(False)
+        self.add_btn.setFocusPolicy(Qt.NoFocus)
         self.add_btn.clicked.connect(self.add_new_class)
         self.class_layout.addWidget(self.add_btn)
 
         self.remove_btn = QPushButton("-")
         self.remove_btn.setCursor(Qt.PointingHandCursor)
+        self.remove_btn.setAutoDefault(False)
+        self.remove_btn.setDefault(False)
+        self.remove_btn.setFocusPolicy(Qt.NoFocus)
         self.remove_btn.clicked.connect(self.remove_last_class)
         self.class_layout.addWidget(self.remove_btn)
 
@@ -484,24 +516,42 @@ class AnnotationTool(QWidget):
         color = self._box_color(cls)
         line_width, font_scale, font_thickness = self._box_style(image_width, image_height)
 
-        if selected:
-            cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 255), line_width + max(1, line_width // 2))
-        else:
-            cv2.rectangle(image, (x1, y1), (x2, y2), color, line_width)
-
         class_name = self.class_names[cls] if cls < len(self.class_names) else str(cls)
-        cv2.putText(
-            image,
-            class_name,
-            (x1, max(30, y1 - 10)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            font_scale,
-            color,
-            font_thickness,
-        )
+        if cv2 is not None:
+            if selected:
+                cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 255), line_width + max(1, line_width // 2))
+            else:
+                cv2.rectangle(image, (x1, y1), (x2, y2), color, line_width)
+            cv2.putText(
+                image,
+                class_name,
+                (x1, max(30, y1 - 10)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                font_scale,
+                color,
+                font_thickness,
+            )
+            return
+
+        pil_image = Image.fromarray(image)
+        draw = ImageDraw.Draw(pil_image)
+        outline = (0, 255, 255) if selected else color
+        draw.rectangle((x1, y1, x2, y2), outline=outline, width=line_width + (max(1, line_width // 2) if selected else 0))
+        draw.text((x1, max(30, y1 - 10)), class_name, fill=color)
+        image[:] = np.array(pil_image)
 
     def _load_image_array(self, image_path: str):
-        from PIL import Image
+        from app.utils.sxm_parser import load_sxm_as_image
+
+        if image_path.lower().endswith(".sxm"):
+            try:
+                pil_image, _ = load_sxm_as_image(image_path, use_color=False)
+                if pil_image is not None:
+                    if pil_image.mode != "RGB":
+                        pil_image = pil_image.convert("RGB")
+                    return np.array(pil_image)
+            except Exception as exc:  # noqa: BLE001
+                _debug(f"SXM 读取失败: {exc}")
 
         try:
             pil_image = Image.open(image_path)
@@ -511,12 +561,13 @@ class AnnotationTool(QWidget):
         except Exception as exc:  # noqa: BLE001
             _debug(f"PIL 读取图片失败: {exc}")
 
-        try:
-            image = cv2.imread(image_path)
-            if image is not None:
-                return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        except Exception as exc:  # noqa: BLE001
-            _debug(f"cv2 读取图片失败: {exc}")
+        if cv2 is not None:
+            try:
+                image = cv2.imread(image_path)
+                if image is not None:
+                    return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            except Exception as exc:  # noqa: BLE001
+                _debug(f"cv2 读取图片失败: {exc}")
 
         return None
 
@@ -691,7 +742,13 @@ class AnnotationTool(QWidget):
             if temp_coords:
                 temp_x1, temp_y1, temp_x2, temp_y2 = temp_coords
                 line_width, _, _ = self._box_style(w, h)
-                cv2.rectangle(image_copy, (temp_x1, temp_y1), (temp_x2, temp_y2), (0, 0, 255), line_width)
+                if cv2 is not None:
+                    cv2.rectangle(image_copy, (temp_x1, temp_y1), (temp_x2, temp_y2), (0, 0, 255), line_width)
+                else:
+                    pil_image = Image.fromarray(image_copy)
+                    draw = ImageDraw.Draw(pil_image)
+                    draw.rectangle((temp_x1, temp_y1, temp_x2, temp_y2), outline=(255, 0, 0), width=line_width)
+                    image_copy = np.array(pil_image)
 
         bytes_per_line = 3 * w
         q_image = QImage(image_copy.data, w, h, bytes_per_line, QImage.Format_RGB888)
@@ -724,16 +781,25 @@ class AnnotationTool(QWidget):
         if ok and name:
             if cls >= len(self.class_names):
                 while len(self.class_names) <= cls:
-                    self.class_names.append(str(len(self.class_names)))
+                    self.class_names.append(self._next_default_class_name())
             self.class_names[cls] = name
             if cls < len(self.class_buttons):
                 self.class_buttons[cls].setText(name)
             self.draw_annotations()
             self.annotation_updated.emit()
 
+    def _next_default_class_name(self) -> str:
+        existing_names = {str(name) for name in self.class_names}
+        numeric_names = [int(name) for name in existing_names if name.isdigit()]
+        candidate = max(numeric_names) + 1 if numeric_names else len(existing_names)
+        while str(candidate) in existing_names:
+            candidate += 1
+        return str(candidate)
+
     def add_new_class(self) -> None:
         new_cls = len(self.class_buttons)
-        btn = QPushButton(str(new_cls))
+        default_name = self._next_default_class_name()
+        btn = QPushButton(default_name)
         btn.setCheckable(True)
         btn.clicked.connect(lambda checked, cls=new_cls: self.select_class(cls))
         btn.mouseDoubleClickEvent = lambda event, cls=new_cls: self.edit_class_name(cls)
@@ -742,7 +808,7 @@ class AnnotationTool(QWidget):
         self.class_buttons.append(btn)
 
         while len(self.class_names) <= new_cls:
-            self.class_names.append(str(len(self.class_names)))
+            self.class_names.append(self._next_default_class_name())
 
         self.annotation_updated.emit()
 

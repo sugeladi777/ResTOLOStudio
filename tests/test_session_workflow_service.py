@@ -55,3 +55,5 @@ def test_session_workflow_service_ensures_session(tmp_path: Path):
     assert reused is created
     assert workflow.scan_dir(created.id).exists()
     assert workflow.inference_dir(created.id).exists()
+    assert workflow.training_dir(created.id).exists()
+    assert workflow.annotation_dir(created.id).exists()

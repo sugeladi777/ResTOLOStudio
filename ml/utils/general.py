@@ -93,7 +93,11 @@ def check_git_status():
 
 def check_requirements(requirements='requirements.txt', exclude=()):
     # Check installed dependencies meet requirements (pass *.txt file or list of packages)
-    import pkg_resources as pkg
+    try:
+        import pkg_resources as pkg
+    except ModuleNotFoundError:
+        print("WARNING: pkg_resources is unavailable, skipping dependency auto-check. Install setuptools to enable it.")
+        return
     prefix = colorstr('red', 'bold', 'requirements:')
     if isinstance(requirements, (str, Path)):  # requirements.txt file
         file = Path(requirements)

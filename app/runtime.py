@@ -82,4 +82,7 @@ class AppRuntime:
         return InferenceService(inference_manager)
 
     def create_startup_session(self, label: str = "startup") -> dict:
+        sessions = self.session_workflow_service.list_sessions()
+        if sessions:
+            return sessions[0]
         return self.session_workflow_service.create_session(label)

@@ -18,6 +18,9 @@ class SessionWorkflowService:
     def create_session(self, label: str | None = None) -> SessionRecord:
         return self.result_store.create_session(label or "session")
 
+    def rename_session(self, session_id: str, label: str) -> SessionRecord:
+        return self.result_store.rename_session(session_id, label)
+
     def ensure_session(self, current_session: SessionRecord | None, label: str | None = None) -> SessionRecord:
         if current_session is not None:
             return current_session
@@ -28,6 +31,12 @@ class SessionWorkflowService:
 
     def inference_dir(self, session_id: str) -> Path:
         return self.result_store.inference_dir(session_id)
+
+    def training_dir(self, session_id: str) -> Path:
+        return self.result_store.training_dir(session_id)
+
+    def annotation_dir(self, session_id: str) -> Path:
+        return self.result_store.annotation_dir(session_id)
 
     def selected_session(self, index: int) -> SessionRecord | None:
         sessions = self.list_sessions()

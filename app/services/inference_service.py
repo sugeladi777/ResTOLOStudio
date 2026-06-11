@@ -21,7 +21,19 @@ class InferenceService:
             payload = scan_result
         files = []
         for item in payload.get("saved", []):
-            png_path = item.get("png")
-            if png_path:
-                files.append(str(Path(png_path)))
-        return files
+            for key in ("png", "jpg", "jpeg", "bmp", "sxm"):
+                file_path = item.get(key)
+                if file_path:
+                    files.append(str(Path(file_path)))
+        for key in ("png", "jpg", "jpeg", "bmp", "image", "image_path", "nanonis_file_path"):
+            file_path = payload.get(key)
+            if file_path:
+                files.append(str(Path(file_path)))
+        deduped = []
+        seen = set()
+        for file_path in files:
+            if file_path in seen:
+                continue
+            seen.add(file_path)
+            deduped.append(file_path)
+        return deduped

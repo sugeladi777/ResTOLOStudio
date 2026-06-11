@@ -54,6 +54,45 @@ class StudioRuntimeController:
     def _inference_images(self) -> list[str]:
         return list(getattr(getattr(self.window, "inference_manager", None), "images", []) or [])
 
+    def _used_annotation_classes(self, annotations) -> list[str]:
+        used_classes: set[str] = set()
+        for boxes in annotations.values():
+            for box in boxes:
+                if hasattr(box, "cls"):
+                    used_classes.add(str(box.cls))
+                elif isinstance(box, (list, tuple)) and box:
+                    used_classes.add(str(box[0]))
+        return sorted(used_classes)
+
+    def _model_status_text(self) -> str:
+        model_status: list[str] = []
+        if self._has_yolo_model():
+            model_status.append("检测模型已就绪")
+        if self._has_resnet_model():
+            model_status.append("分类模型已就绪")
+        return "，".join(model_status) if model_status else "模型尚未加载。"
+
+    def _training_dataset_status_text(self, image_count: int, annotation_count: int) -> str:
+        train_data_path = getattr(self.window, "train_resnet_data_path", None)
+        has_resnet_data = bool(train_data_path and train_data_path.text().strip())
+        if image_count and annotation_count:
+            return f"训练数据已就绪：{image_count} 张图像，{annotation_count} 个标注。"
+        if has_resnet_data:
+            return "已加载外部分类数据。"
+        return "训练数据尚未准备好。"
+
+    def _training_run_status_text(self) -> str:
+        pending_training = getattr(self.window, "pending_training_context", None)
+        if pending_training is not None:
+            return "训练任务进行中。"
+        return "当前没有训练任务。"
+
+    def _inference_result_status_text(self) -> str:
+        pending_infer = getattr(self.window, "pending_inference_session_id", None)
+        if pending_infer:
+            return f"推理任务进行中：{pending_infer}"
+        return "当前没有推理结果。"
+
     def _refresh_status_labels(self) -> None:
         state = self._annotation_state()
         images = list(getattr(state, "images", []) or []) if state is not None else []
@@ -65,15 +104,9 @@ class StudioRuntimeController:
         else:
             self._set_label_text("annotation_status_detail", "尚未加载图像。")
 
-        used_classes: set[str] = set()
-        for boxes in annotations.values():
-            for box in boxes:
-                if hasattr(box, "cls"):
-                    used_classes.add(str(box.cls))
-                elif isinstance(box, (list, tuple)) and box:
-                    used_classes.add(str(box[0]))
+        used_classes = self._used_annotation_classes(annotations)
         if used_classes:
-            self._set_label_text("annotation_classes_detail", f"已使用类别：{', '.join(sorted(used_classes))}")
+            self._set_label_text("annotation_classes_detail", f"已使用类别：{', '.join(used_classes)}")
         else:
             self._set_label_text("annotation_classes_detail", "尚未识别到已使用类别。")
 
@@ -85,36 +118,15 @@ class StudioRuntimeController:
             self._set_label_text("inference_input_status_detail", "尚未加载推理图像。")
             self._set_label_text("inference_batch_status_detail", "当前没有推理批次。")
 
-        model_status = []
-        if self._has_yolo_model():
-            model_status.append("检测模型已就绪")
-        if self._has_resnet_model():
-            model_status.append("分类模型已就绪")
-        model_text = "，".join(model_status) if model_status else "模型尚未加载。"
+        model_text = self._model_status_text()
         self._set_label_text("training_model_status_detail", model_text)
         self._set_label_text("inference_model_status_detail", model_text)
 
-        train_data_path = getattr(self.window, "train_resnet_data_path", None)
-        has_resnet_data = bool(train_data_path and train_data_path.text().strip())
-        if images and annotation_count:
-            dataset_text = f"训练数据已就绪：{len(images)} 张图像，{annotation_count} 个标注。"
-        elif has_resnet_data:
-            dataset_text = "已加载外部分类数据。"
-        else:
-            dataset_text = "训练数据尚未准备好。"
+        dataset_text = self._training_dataset_status_text(len(images), annotation_count)
         self._set_label_text("training_dataset_status_detail", dataset_text)
 
-        pending_training = getattr(self.window, "pending_training_context", None)
-        if pending_training is not None:
-            self._set_label_text("training_run_status_detail", "训练任务进行中。")
-        else:
-            self._set_label_text("training_run_status_detail", "当前没有训练任务。")
-
-        pending_infer = getattr(self.window, "pending_inference_session_id", None)
-        if pending_infer:
-            self._set_label_text("inference_result_status_detail", f"推理任务进行中：{pending_infer}")
-        else:
-            self._set_label_text("inference_result_status_detail", "当前没有推理结果。")
+        self._set_label_text("training_run_status_detail", self._training_run_status_text())
+        self._set_label_text("inference_result_status_detail", self._inference_result_status_text())
 
         current_index = getattr(getattr(self.window, "tab_widget", None), "currentIndex", lambda: 0)()
         mode_text = {
@@ -171,13 +183,37 @@ class StudioRuntimeController:
         session = getattr(self.window, "current_session", None)
         if context is None or session is None or not hasattr(self.window, "training_job_service"):
             return
-        record = self.window.training_job_service.complete_record(
-            context,
-            output_dir=self.window.training_job_service.output_dir_for_window(self.window),
-            status=status,
-        )
+        record = self.window.training_job_service.complete_record(context, status=status)
         self.window.session_workflow_service.append_training_result(session.id, record)
+        self._apply_training_artifacts(record)
         self.window.pending_training_context = None
+
+    def _apply_training_artifacts(self, record) -> None:
+        loader = getattr(self.window, "resource_loader_service", None)
+        model_manager = getattr(self.window, "model_manager", None)
+        log = getattr(self.window, "log", None)
+        if loader is None or model_manager is None or log is None:
+            return
+
+        yolo_targets = (
+            getattr(self.window, "train_yolo_model_path", None),
+            getattr(self.window, "infer_yolo_model_path", None),
+        )
+        resnet_targets = (
+            getattr(self.window, "train_resnet_model_path", None),
+            getattr(self.window, "infer_resnet_model_path", None),
+        )
+        classes_targets = (
+            getattr(self.window, "train_classes_path", None),
+            getattr(self.window, "infer_classes_path", None),
+        )
+
+        if getattr(record, "yolo_model_path", ""):
+            loader.load_yolo_model(record.yolo_model_path, model_manager, log, *yolo_targets)
+        if getattr(record, "resnet_model_path", ""):
+            loader.load_resnet_model(record.resnet_model_path, model_manager, log, *resnet_targets)
+        if getattr(record, "classes_yaml_path", ""):
+            loader.load_classes_file(record.classes_yaml_path, log, *classes_targets)
 
     def on_training_finished(self) -> None:
         self.window.log("训练完成。")

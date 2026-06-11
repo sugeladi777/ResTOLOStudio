@@ -36,6 +36,9 @@ class AppPaths:
 
     @property
     def default_resnet_model_path(self) -> Path:
+        preferred = self.models_root / "demo-resnet50.saving"
+        if preferred.exists():
+            return preferred
         return self.models_root / "demo.saving"
 
     @property

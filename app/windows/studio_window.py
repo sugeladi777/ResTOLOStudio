@@ -40,8 +40,11 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
         self.pending_scan_results = []
         self._initialize_controllers()
 
-        self.studio.apply_default_model_paths()
         self._build_studio_tabs()
+        self.studio.apply_saved_acquisition_settings()
+        self.studio.apply_default_model_paths()
+        self.studio.apply_saved_resource_paths()
+        self.studio.apply_current_session_model_paths()
         self._restore_window_geometry()
         self._restore_splitter_state()
         QTimer.singleShot(0, self._restore_splitter_state)
@@ -50,6 +53,8 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
             splitter.splitterMoved.connect(self._persist_splitter_state)
         self._configure_tab_labels()
         self.studio.reload_sessions()
+        if hasattr(self, "tab_widget"):
+            self.tab_widget.setCurrentIndex(0)
         self.update_button_states()
         if hasattr(self, "tab_widget"):
             self.on_tab_changed(self.tab_widget.currentIndex())
@@ -327,6 +332,15 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
 
     def reload_sessions(self):
         return self._call_studio_controller("reload_sessions")
+
+    def create_session(self):
+        return self._call_studio_controller("create_session")
+
+    def activate_selected_session(self):
+        return self._call_studio_controller("activate_selected_session")
+
+    def rename_selected_session(self):
+        return self._call_studio_controller("rename_selected_session")
 
     def _session_selected(self, index: int):
         return self._call_studio_controller("on_session_selected", index)
