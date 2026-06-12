@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 from contextlib import nullcontext
@@ -136,7 +137,7 @@ class NanonisSessionService:
     def scan_and_save(self, *, label: str, width_nm: float, height_nm: float, center_x_nm: float, center_y_nm: float, angle_deg: float, pixels: int, channels: Iterable[str], timeout_ms: int = 300000, direction: int = 1) -> dict:
         client = self._require()
         channel_indexes = self._resolve_scan_channels(channels)
-        return client.scan_and_save(
+        result = client.scan_and_save(
             label=label,
             width_nm=width_nm,
             height_nm=height_nm,
@@ -149,6 +150,21 @@ class NanonisSessionService:
             direction=direction,
             timeout_ms=timeout_ms,
         )
+        result.setdefault("captured_at", datetime.now().isoformat(timespec="seconds"))
+        result.setdefault(
+            "scan_request",
+            {
+                "width_nm": width_nm,
+                "height_nm": height_nm,
+                "center_x_nm": center_x_nm,
+                "center_y_nm": center_y_nm,
+                "angle_deg": angle_deg,
+                "pixels": pixels,
+                "lines": pixels,
+                "channels": [str(channel) for channel in channels],
+            },
+        )
+        return result
 
     def bias_pulse(self, bias_value: float, bias_pulse_width: float, z_hold: int = 1, rel_abs: int = 2) -> object:
         client = self._require()

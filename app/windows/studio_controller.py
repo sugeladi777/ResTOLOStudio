@@ -2,7 +2,7 @@ import os
 import threading
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QColor, QPainter, QPixmap
 from PyQt5.QtWidgets import QCheckBox, QFileDialog, QInputDialog, QMessageBox
 
 from app.core import ScanResultRecord, SessionRecord
@@ -136,6 +136,30 @@ class StudioController:
                 self.window.scan_channels_edit.text(),
             )
         return geometry.to_dict()
+
+    def _pending_scan_context(self, workflow: str, include_pulse: bool = False) -> dict:
+        context = {
+            "workflow": workflow,
+            "session_label": self.window.scan_label_edit.text().strip(),
+            "bias_v": float(self.window.scan_bias_edit.text().strip()),
+            "setpoint_a": float(self.window.scan_setpoint_edit.text().strip()),
+        }
+        if include_pulse:
+            context["pulse_bias_v"] = float(self.window.pulse_bias_edit.text().strip())
+            context["pulse_width_s"] = float(self.window.pulse_width_edit.text().strip())
+        return context
+
+    def _take_pending_scan_context(self) -> dict:
+        context = dict(getattr(self.window, "pending_scan_context", {}) or {})
+        self.window.pending_scan_context = None
+        return context
+
+    def _enrich_scan_result_payload(self, payload: dict, context: dict) -> dict:
+        enriched = dict(payload)
+        raw_context = dict(enriched.get("scan_context", {}) or {})
+        raw_context.update(context)
+        enriched["scan_context"] = raw_context
+        return enriched
 
     def _all_sessions(self) -> list[SessionRecord]:
         return self.window.session_workflow_service.list_sessions()
@@ -317,6 +341,50 @@ class StudioController:
                 return path
         return None
 
+    def _preview_overlay_lines(self, result: ScanResultRecord | None) -> list[str]:
+        session_service = getattr(self.window, "session_workflow_service", None)
+        if session_service is None or result is None:
+            return []
+        return list(session_service.result_overlay_lines(result))
+
+    def _annotated_preview_pixmap(self, preview_path: str, result: ScanResultRecord | None) -> QPixmap:
+        pixmap = QPixmap(preview_path)
+        if pixmap.isNull():
+            return pixmap
+
+        scaled = pixmap.scaled(420, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        lines = self._preview_overlay_lines(result)
+        if not lines:
+            return scaled
+
+        annotated = QPixmap(scaled)
+        painter = QPainter(annotated)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        font = painter.font()
+        font.setPointSize(max(font.pointSize(), 9))
+        painter.setFont(font)
+        metrics = painter.fontMetrics()
+
+        line_height = metrics.lineSpacing()
+        text_width = max(metrics.horizontalAdvance(line) for line in lines)
+        box_width = min(annotated.width() - 20, text_width + 20)
+        box_height = min(annotated.height() - 20, line_height * len(lines) + 16)
+        box_y = annotated.height() - box_height - 10
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(16, 16, 16, 190))
+        painter.drawRoundedRect(10, box_y, box_width, box_height, 8, 8)
+
+        painter.setPen(QColor(245, 247, 248))
+        text_y = box_y + 12 + metrics.ascent()
+        for line in lines:
+            painter.drawText(20, text_y, line)
+            text_y += line_height
+
+        painter.end()
+        return annotated
+
     def _set_result_preview_placeholder(self, message: str, caption: str | None = None) -> None:
         preview_label = getattr(self.window, "result_preview_label", None)
         if preview_label is None:
@@ -361,14 +429,18 @@ class StudioController:
             )
             return
 
-        pixmap = QPixmap(preview_path)
+        pixmap = self._annotated_preview_pixmap(preview_path, other)
         if pixmap.isNull():
             self._set_compare_preview_placeholder("对比预览加载失败", os.path.basename(preview_path))
             return
 
-        compare_label.setPixmap(pixmap.scaled(420, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        compare_label.setPixmap(pixmap)
         if compare_caption is not None:
-            compare_caption.setText(f"对比预览：{getattr(other, 'label', '未命名')} / {os.path.basename(preview_path)}")
+            overlay_lines = self._preview_overlay_lines(other)
+            compare_caption.setText(
+                f"对比预览：{getattr(other, 'label', '未命名')} / {os.path.basename(preview_path)}"
+                + (f" | {overlay_lines[1]}" if len(overlay_lines) > 1 else "")
+            )
 
     def _set_pending_scan_results(self, *results: ScanResultRecord) -> None:
         self.window.pending_scan_results = list(results)
@@ -611,15 +683,19 @@ class StudioController:
             self._set_result_preview_placeholder("当前结果没有可预览图像", "如结果包含导出图像，这里会自动显示第一张。")
             return
 
-        pixmap = QPixmap(preview_path)
+        pixmap = self._annotated_preview_pixmap(preview_path, result)
         if pixmap.isNull():
             self._set_result_preview_placeholder("预览加载失败", os.path.basename(preview_path))
             return
 
-        preview_label.setPixmap(pixmap.scaled(420, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        preview_label.setPixmap(pixmap)
         preview_caption = getattr(self.window, "result_preview_caption", None)
         if preview_caption is not None:
-            preview_caption.setText(f"当前预览：{os.path.basename(preview_path)}")
+            overlay_lines = self._preview_overlay_lines(result)
+            preview_caption.setText(
+                f"当前预览：{os.path.basename(preview_path)}"
+                + (f" | {overlay_lines[1]}" if len(overlay_lines) > 1 else "")
+            )
 
     def _show_scan_result_in_workspace(self, result: ScanResultRecord | None) -> None:
         if result is None:
@@ -1069,6 +1145,7 @@ class StudioController:
     def scan_and_save_from_nanonis(self) -> None:
         self.persist_current_acquisition_settings()
         session = self._new_session()
+        self.window.pending_scan_context = self._pending_scan_context("single_scan")
         self.window.log(f"开始扫描，会话：{session.id}")
         self._run_service("scan_and_save", lambda: self.window.nanonis_service.scan_and_save(label=session.id, **self._scan_geometry()))
 
@@ -1078,6 +1155,7 @@ class StudioController:
 
         self.persist_current_acquisition_settings()
         session = self._new_session()
+        self.window.pending_scan_context = self._pending_scan_context("scan_pulse_scan", include_pulse=True)
         self._run_service(
             "scan_pulse_scan",
             lambda: self.window.workflow_service.scan_pulse_scan(
@@ -1290,13 +1368,23 @@ class StudioController:
             return
 
         if key == "scan_and_save":
-            record = self.window.acquisition_workflow_service.append_scan_result(self.window.current_session.id, result)
+            context = self._take_pending_scan_context()
+            payload = self._enrich_scan_result_payload(result, context) if isinstance(result, dict) else result
+            record = self.window.acquisition_workflow_service.append_scan_result(self.window.current_session.id, payload)
             self._set_pending_scan_results(record)
             self._show_scan_result_in_workspace(record)
             self.window.log(f"扫描完成：{record.label}")
             return
 
         if key == "scan_pulse_scan":
+            context = self._take_pending_scan_context()
+            if isinstance(result, dict):
+                workflow_payload = dict(result)
+                if isinstance(workflow_payload.get("pre_scan"), dict):
+                    workflow_payload["pre_scan"] = self._enrich_scan_result_payload(workflow_payload["pre_scan"], context)
+                if isinstance(workflow_payload.get("post_scan"), dict):
+                    workflow_payload["post_scan"] = self._enrich_scan_result_payload(workflow_payload["post_scan"], context)
+                result = workflow_payload
             pre_scan, post_scan = self.window.acquisition_workflow_service.append_scan_workflow_results(
                 self.window.current_session.id,
                 result,
@@ -1307,5 +1395,7 @@ class StudioController:
 
     def handle_service_error(self, key: str, message: str) -> None:
         self._set_async_busy(False)
+        if key in {"scan_and_save", "scan_pulse_scan"}:
+            self.window.pending_scan_context = None
         self.window.log(f"{key} 失败：{message}")
         QMessageBox.warning(self.window, "操作失败", f"{key} 失败：\n{message}")
