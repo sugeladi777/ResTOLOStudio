@@ -105,12 +105,18 @@ class StudioPanelsMixin:
         layout.setSpacing(8)
 
         toolbar = QWidget()
-        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout = QVBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(0, 0, 0, 0)
         toolbar_layout.setSpacing(6)
 
         self.session_search_edit = QLineEdit()
         self.session_search_edit.setPlaceholderText("搜索会话标签、阶段或结果数量")
+        toolbar_layout.addWidget(self.session_search_edit)
+
+        sort_row = QHBoxLayout()
+        sort_row.setContentsMargins(0, 0, 0, 0)
+        sort_row.setSpacing(6)
+        sort_row.addWidget(self.create_label("排序方式"))
         self.session_sort_combo = QComboBox()
         self.session_sort_combo.addItems(
             [
@@ -120,8 +126,8 @@ class StudioPanelsMixin:
                 "推理结果最多",
             ]
         )
-        toolbar_layout.addWidget(self.session_search_edit, 3)
-        toolbar_layout.addWidget(self.session_sort_combo, 2)
+        sort_row.addWidget(self.session_sort_combo, 1)
+        toolbar_layout.addLayout(sort_row)
         layout.addWidget(toolbar)
 
         self.session_browser_context_text = self._styled_readonly_text(
@@ -133,6 +139,9 @@ class StudioPanelsMixin:
 
         self.session_list = QListWidget()
         self.session_list.setMinimumHeight(150)
+        self.session_list.setWordWrap(True)
+        self.session_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.session_list.setTextElideMode(Qt.ElideNone)
 
         self.new_session_btn = self.create_button("新建会话", self.create_session)
         self.activate_session_btn = self.create_button("设为当前", self.activate_selected_session)
@@ -154,6 +163,9 @@ class StudioPanelsMixin:
 
         self.result_list = QListWidget()
         self.result_list.setMinimumHeight(180)
+        self.result_list.setWordWrap(True)
+        self.result_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.result_list.setTextElideMode(Qt.ElideNone)
         self.result_detail_text = self._styled_readonly_text(
             min_height=120,
             max_height=180,
@@ -167,11 +179,12 @@ class StudioPanelsMixin:
         result_group = self.create_group("扫描结果")
         result_layout = result_group.layout()
         result_layout.addWidget(self.result_list)
-        result_actions = QHBoxLayout()
-        result_actions.setSpacing(6)
-        result_actions.addWidget(self.use_selected_result_btn, 2)
-        result_actions.addWidget(self.open_result_dir_btn, 2)
-        result_actions.addWidget(self.refresh_sessions_btn, 1)
+        result_actions = QGridLayout()
+        result_actions.setHorizontalSpacing(6)
+        result_actions.setVerticalSpacing(6)
+        result_actions.addWidget(self.use_selected_result_btn, 0, 0)
+        result_actions.addWidget(self.open_result_dir_btn, 0, 1)
+        result_actions.addWidget(self.refresh_sessions_btn, 1, 0, 1, 2)
         result_layout.addLayout(result_actions)
         result_layout.addWidget(self.result_detail_text)
         layout.addWidget(result_group)
@@ -191,13 +204,13 @@ class StudioPanelsMixin:
         compare_layout.setContentsMargins(0, 0, 0, 0)
         compare_layout.setSpacing(6)
 
-        compare_toolbar = QHBoxLayout()
+        compare_toolbar = QVBoxLayout()
         compare_toolbar.setContentsMargins(0, 0, 0, 0)
-        compare_toolbar.setSpacing(6)
+        compare_toolbar.setSpacing(4)
         compare_toolbar.addWidget(self.create_label("对比对象"))
         self.result_compare_combo = QComboBox()
         self.result_compare_combo.addItem("不进行对比")
-        compare_toolbar.addWidget(self.result_compare_combo, 1)
+        compare_toolbar.addWidget(self.result_compare_combo)
         compare_layout.addLayout(compare_toolbar)
 
         self.result_compare_summary_text = self._styled_readonly_text(
