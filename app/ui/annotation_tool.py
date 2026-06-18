@@ -330,6 +330,7 @@ class AnnotationTool(QWidget):
         self.max_zoom = 10.0
         self.is_panning = False
         self.last_pan_point = QPoint()
+        self.annotation_mode = True
 
     def load_state(self, state: AnnotationState) -> None:
         normalized = state.normalized()
@@ -635,8 +636,12 @@ class AnnotationTool(QWidget):
             base_width = max_width
             base_height = int(base_width / aspect_ratio)
 
-        final_width = int(base_width * self.zoom_level)
-        final_height = int(base_height * self.zoom_level)
+        if self.annotation_mode:
+            final_width = int(base_width * self.zoom_level)
+            final_height = int(base_height * self.zoom_level)
+        else:
+            final_width = base_width
+            final_height = base_height
 
         final_pixmap = pixmap.scaled(final_width, final_height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
         self.image_label.setPixmap(final_pixmap)
@@ -651,10 +656,10 @@ class AnnotationTool(QWidget):
 
         image_path = self.images[self.current_index]
         basename = os.path.basename(image_path)
-        zoom_percent = int(self.zoom_level * 100)
         box_count = len(self.annotations.get(image_path, []))
+        zoom_text = f"{int(self.zoom_level * 100)}%" if self.annotation_mode else "适应窗口"
         self.status_label.setText(
-            f"第 {self.current_index + 1}/{len(self.images)} 张 | {basename} | 标注框 {box_count} 个 | 缩放 {zoom_percent}%"
+            f"第 {self.current_index + 1}/{len(self.images)} 张 | {basename} | 标注框 {box_count} 个 | 缩放 {zoom_text}"
         )
 
     def eventFilter(self, obj, event):
@@ -682,6 +687,8 @@ class AnnotationTool(QWidget):
     def wheelEvent(self, event) -> None:
         if self.current_image is None:
             return
+        if not self.annotation_mode:
+            return
 
         delta = event.angleDelta().y()
         zoom_factor = 1.15 if delta > 0 else 0.85
@@ -691,6 +698,8 @@ class AnnotationTool(QWidget):
 
     def handle_mouse_press(self, event) -> None:
         if self.current_image is None:
+            return
+        if not self.annotation_mode:
             return
 
         if event.button() == Qt.RightButton:
@@ -705,6 +714,8 @@ class AnnotationTool(QWidget):
             self.start_point = event.pos()
 
     def handle_mouse_move(self, event) -> None:
+        if not self.annotation_mode:
+            return
         if self.is_panning:
             delta = event.pos() - self.last_pan_point
             self.last_pan_point = event.pos()
@@ -715,6 +726,8 @@ class AnnotationTool(QWidget):
             self.draw_temp_rectangle()
 
     def handle_mouse_release(self, event) -> None:
+        if not self.annotation_mode:
+            return
         if event.button() == Qt.RightButton and self.is_panning:
             self.is_panning = False
             self.image_label.setCursor(Qt.PointingHandCursor)
@@ -955,6 +968,14 @@ class AnnotationTool(QWidget):
             _debug(f"更新类别名称失败: {exc}")
 
     def set_annotation_mode(self, enabled: bool) -> None:
+        self.annotation_mode = enabled
         if hasattr(self, "more_btn"):
             self.more_btn.setVisible(enabled)
         self.class_scroll_area.setVisible(enabled)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded if enabled else Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if enabled else Qt.ScrollBarAlwaysOff)
+        if not enabled:
+            self.zoom_level = 1.0
+            self.is_panning = False
+        if self.current_image is not None:
+            self.draw_annotations()

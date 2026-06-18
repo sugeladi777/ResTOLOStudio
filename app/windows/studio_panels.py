@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QComboBox,
     QFormLayout,
     QFrame,
     QGridLayout,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -89,12 +87,12 @@ class StudioPanelsMixin:
         layout.addWidget(
             self._build_info_banner(
                 "采集工作台",
-                "先连接设备并确认状态，再设置扫描参数。单次扫描会写入当前会话，预扫-脉冲-后扫会按同一批次连续保存。",
+                "保留最常用的扫描设置：几何参数、偏压和设定电流。修改后直接点击“扫描并保存”，程序会自动下发参数并执行扫描。",
             )
         )
         layout.addWidget(self._build_connection_group())
         layout.addWidget(self._build_scan_group())
-        layout.addWidget(self._build_workflow_group())
+        layout.addWidget(_create_collapsible_section("高级流程", self._build_workflow_group(), expanded=False))
         layout.addStretch()
         return tab
 
@@ -112,36 +110,14 @@ class StudioPanelsMixin:
         self.session_search_edit = QLineEdit()
         self.session_search_edit.setPlaceholderText("搜索会话标签、阶段或结果数量")
         toolbar_layout.addWidget(self.session_search_edit)
-
-        sort_row = QHBoxLayout()
-        sort_row.setContentsMargins(0, 0, 0, 0)
-        sort_row.setSpacing(6)
-        sort_row.addWidget(self.create_label("排序方式"))
-        self.session_sort_combo = QComboBox()
-        self.session_sort_combo.addItems(
-            [
-                "最近活跃优先",
-                "扫描结果最多",
-                "训练结果最多",
-                "推理结果最多",
-            ]
-        )
-        sort_row.addWidget(self.session_sort_combo, 1)
-        toolbar_layout.addLayout(sort_row)
         layout.addWidget(toolbar)
-
-        self.session_browser_context_text = self._styled_readonly_text(
-            min_height=64,
-            max_height=88,
-            placeholder="这里会显示当前会话概览。",
-        )
-        layout.addWidget(self.session_browser_context_text)
 
         self.session_list = QListWidget()
         self.session_list.setMinimumHeight(150)
         self.session_list.setWordWrap(True)
         self.session_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.session_list.setTextElideMode(Qt.ElideNone)
+        self.session_list.setStyleSheet("font-size: 16px;")
 
         self.new_session_btn = self.create_button("新建会话", self.create_session)
         self.activate_session_btn = self.create_button("设为当前", self.activate_selected_session)
@@ -166,11 +142,13 @@ class StudioPanelsMixin:
         self.result_list.setWordWrap(True)
         self.result_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.result_list.setTextElideMode(Qt.ElideNone)
+        self.result_list.setStyleSheet("font-size: 16px;")
         self.result_detail_text = self._styled_readonly_text(
-            min_height=120,
-            max_height=180,
+            min_height=144,
+            max_height=220,
             placeholder="选择扫描结果后，这里会显示扫描参数、导出文件和来源信息。",
         )
+        self.result_detail_text.setStyleSheet(self.result_detail_text.styleSheet() + "QTextEdit { font-size: 15px; line-height: 1.45; }")
 
         self.use_selected_result_btn = self.create_button("用于推理", self.use_selected_result_for_inference, accent=True)
         self.open_result_dir_btn = self.create_button("打开结果目录", self.open_selected_result_directory)
@@ -188,52 +166,11 @@ class StudioPanelsMixin:
         result_layout.addLayout(result_actions)
         result_layout.addWidget(self.result_detail_text)
         layout.addWidget(result_group)
-
-        self.result_preview_label = self._preview_label("选择扫描结果后，这里会显示带扫描信息的预览。", minimum_height=220)
-        self.result_preview_caption = QLabel("当前预览：未选择结果")
-        self.result_preview_caption.setStyleSheet(f"color: {MUTED_COLOR};")
-
-        preview_group = self.create_group("当前预览")
-        preview_layout = preview_group.layout()
-        preview_layout.addWidget(self.result_preview_label)
-        preview_layout.addWidget(self.result_preview_caption)
-        layout.addWidget(preview_group)
-
-        compare_panel = QWidget()
-        compare_layout = QVBoxLayout(compare_panel)
-        compare_layout.setContentsMargins(0, 0, 0, 0)
-        compare_layout.setSpacing(6)
-
-        compare_toolbar = QVBoxLayout()
-        compare_toolbar.setContentsMargins(0, 0, 0, 0)
-        compare_toolbar.setSpacing(4)
-        compare_toolbar.addWidget(self.create_label("对比对象"))
-        self.result_compare_combo = QComboBox()
-        self.result_compare_combo.addItem("不进行对比")
-        compare_toolbar.addWidget(self.result_compare_combo)
-        compare_layout.addLayout(compare_toolbar)
-
-        self.result_compare_summary_text = self._styled_readonly_text(
-            min_height=72,
-            max_height=96,
-            placeholder="选择对比对象后，这里会显示摘要对比。",
-        )
-        compare_layout.addWidget(self.result_compare_summary_text)
-
-        self.result_compare_preview_label = self._preview_label("未选择对比结果", minimum_height=180)
-        self.result_compare_preview_caption = QLabel("对比预览：未选择结果")
-        self.result_compare_preview_caption.setStyleSheet(f"color: {MUTED_COLOR};")
-        compare_layout.addWidget(self.result_compare_preview_label)
-        compare_layout.addWidget(self.result_compare_preview_caption)
-
-        layout.addWidget(_create_collapsible_section("结果对比", compare_panel, expanded=False))
         layout.addStretch()
 
         self.session_list.currentRowChanged.connect(self._session_selected)
         self.result_list.currentRowChanged.connect(self._result_selected)
-        self.result_compare_combo.currentIndexChanged.connect(self._result_comparison_changed)
         self.session_search_edit.textChanged.connect(lambda _text: self.reload_sessions())
-        self.session_sort_combo.currentIndexChanged.connect(lambda _index: self.reload_sessions())
         return tab
 
     def _build_connection_group(self):
@@ -258,21 +195,21 @@ class StudioPanelsMixin:
         form.addWidget(self.create_label("版本"), 1, 0)
         form.addWidget(self.nano_version_edit, 1, 1)
 
-        button_row = QHBoxLayout()
-        button_row.setSpacing(6)
-        button_row.addWidget(self.create_button("连接", self.connect_nanonis))
-        button_row.addWidget(self.create_button("断开", self.disconnect_nanonis))
-        button_row.addWidget(self.create_button("刷新状态", self.refresh_nanonis_status))
-        button_row.addStretch()
+        button_grid = QGridLayout()
+        button_grid.setHorizontalSpacing(6)
+        button_grid.setVerticalSpacing(6)
+        button_grid.addWidget(self.create_button("连接", self.connect_nanonis), 0, 0)
+        button_grid.addWidget(self.create_button("断开", self.disconnect_nanonis), 0, 1)
+        button_grid.addWidget(self.create_button("刷新状态", self.refresh_nanonis_status), 0, 2)
 
         self.nano_status_text = self._styled_readonly_text(
-            min_height=78,
-            max_height=96,
+            min_height=60,
+            max_height=80,
             placeholder="连接后，这里会显示设备状态与最新反馈。",
         )
 
         layout.addLayout(form)
-        layout.addLayout(button_row)
+        layout.addLayout(button_grid)
         layout.addWidget(self.nano_status_text)
         return group
 
@@ -297,13 +234,22 @@ class StudioPanelsMixin:
         self.scan_pixels_edit.setText("256")
         self.scan_channels_edit = self.create_line_edit("Z, 电流")
 
-        primary_form = QFormLayout()
-        primary_form.setHorizontalSpacing(10)
-        primary_form.setVerticalSpacing(6)
-        primary_form.addRow("会话标签", self.scan_label_edit)
-        primary_form.addRow("偏压 (V)", self.scan_bias_edit)
-        primary_form.addRow("设定电流 (A)", self.scan_setpoint_edit)
-        primary_form.addRow("通道", self.scan_channels_edit)
+        summary_banner = self._build_info_banner(
+            "一键扫描",
+            "点击“扫描并保存”后，会自动设置偏压、设定电流和扫描范围，然后开始扫描并把结果写入当前会话。",
+        )
+
+        primary_grid = QGridLayout()
+        primary_grid.setHorizontalSpacing(8)
+        primary_grid.setVerticalSpacing(6)
+        primary_grid.addWidget(self.create_label("会话标签"), 0, 0)
+        primary_grid.addWidget(self.scan_label_edit, 0, 1, 1, 3)
+        primary_grid.addWidget(self.create_label("偏压 (V)"), 1, 0)
+        primary_grid.addWidget(self.scan_bias_edit, 1, 1)
+        primary_grid.addWidget(self.create_label("设定电流 (A)"), 1, 2)
+        primary_grid.addWidget(self.scan_setpoint_edit, 1, 3)
+        primary_grid.addWidget(self.create_label("通道"), 2, 0)
+        primary_grid.addWidget(self.scan_channels_edit, 2, 1, 1, 3)
 
         geometry_grid = QGridLayout()
         geometry_grid.setHorizontalSpacing(8)
@@ -318,23 +264,20 @@ class StudioPanelsMixin:
         geometry_grid.addWidget(self.scan_center_y_edit, 1, 3)
         geometry_grid.addWidget(self.create_label("像素"), 2, 0)
         geometry_grid.addWidget(self.scan_pixels_edit, 2, 1)
+        geometry_grid.addWidget(self.create_label("角度 (deg)"), 2, 2)
+        self.scan_angle_hint = QLabel("自动沿用当前设备角度")
+        self.scan_angle_hint.setStyleSheet(f"color: {MUTED_COLOR};")
+        geometry_grid.addWidget(self.scan_angle_hint, 2, 3)
 
-        controls_grid = QGridLayout()
-        controls_grid.setHorizontalSpacing(6)
-        controls_grid.setVerticalSpacing(6)
-        controls_grid.addWidget(self.create_button("设置偏压", self.set_nanonis_bias), 0, 0)
-        controls_grid.addWidget(self.create_button("设置电流", self.set_nanonis_setpoint), 0, 1)
-        controls_grid.addWidget(self.create_button("反馈开启", lambda: self.set_nanonis_feedback(True)), 1, 0)
-        controls_grid.addWidget(self.create_button("反馈关闭", lambda: self.set_nanonis_feedback(False)), 1, 1)
+        action_row = QGridLayout()
+        action_row.setHorizontalSpacing(6)
+        action_row.setVerticalSpacing(6)
+        action_row.addWidget(self.create_button("扫描并保存", self.scan_and_save_from_nanonis, accent=True), 0, 0)
+        action_row.addWidget(self.create_button("执行预扫-脉冲-后扫", self.run_scan_pulse_scan_workflow), 0, 1)
 
-        action_row = QHBoxLayout()
-        action_row.setSpacing(6)
-        action_row.addWidget(self.create_button("应用参数", self.apply_nanonis_scan))
-        action_row.addWidget(self.create_button("扫描并保存", self.scan_and_save_from_nanonis, accent=True))
-
-        layout.addLayout(primary_form)
+        layout.addWidget(summary_banner)
+        layout.addLayout(primary_grid)
         layout.addWidget(_create_collapsible_section("几何参数", self._panel_from_layout(geometry_grid), expanded=True))
-        layout.addWidget(_create_collapsible_section("设备控制", self._panel_from_layout(controls_grid), expanded=False))
         layout.addLayout(action_row)
         return group
 
@@ -360,7 +303,6 @@ class StudioPanelsMixin:
                 "执行预扫、脉冲、后扫的连续流程，适合快速对比脉冲前后的表面变化。",
             )
         )
-        layout.addWidget(self.create_button("执行预扫-脉冲-后扫", self.run_scan_pulse_scan_workflow, accent=True))
         return group
 
     def _panel_from_layout(self, child_layout) -> QWidget:

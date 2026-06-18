@@ -119,6 +119,28 @@ class NanonisSessionService:
             client.set_scan_buffer(channel_indexes=channel_indexes, pixels=pixels, lines=pixels)
         return self._safe_status(fallback_message="扫描参数已应用，但状态读取超时。")
 
+    def configure_scan(
+        self,
+        *,
+        bias_v: float,
+        setpoint_a: float,
+        width_nm: float,
+        height_nm: float,
+        center_x_nm: float,
+        center_y_nm: float,
+        angle_deg: float,
+        pixels: int,
+        channels: Iterable[str],
+    ) -> dict:
+        client = self._require()
+        with self._slow_command_timeout(client):
+            client.set_bias(bias_v)
+            client.set_setpoint(setpoint_a)
+            client.set_scan_frame_nm(width_nm, height_nm, center_x_nm, center_y_nm, angle_deg)
+            channel_indexes = self._resolve_scan_channels(channels)
+            client.set_scan_buffer(channel_indexes=channel_indexes, pixels=pixels, lines=pixels)
+        return self._safe_status(fallback_message="扫描前参数已下发，但状态读取超时。")
+
     def set_bias(self, bias_v: float) -> dict:
         client = self._require()
         client.set_bias(bias_v)
@@ -166,6 +188,46 @@ class NanonisSessionService:
         )
         return result
 
+    def configure_and_scan_and_save(
+        self,
+        *,
+        label: str,
+        bias_v: float,
+        setpoint_a: float,
+        width_nm: float,
+        height_nm: float,
+        center_x_nm: float,
+        center_y_nm: float,
+        angle_deg: float,
+        pixels: int,
+        channels: Iterable[str],
+        timeout_ms: int = 300000,
+        direction: int = 1,
+    ) -> dict:
+        self.configure_scan(
+            bias_v=bias_v,
+            setpoint_a=setpoint_a,
+            width_nm=width_nm,
+            height_nm=height_nm,
+            center_x_nm=center_x_nm,
+            center_y_nm=center_y_nm,
+            angle_deg=angle_deg,
+            pixels=pixels,
+            channels=channels,
+        )
+        return self.scan_and_save(
+            label=label,
+            width_nm=width_nm,
+            height_nm=height_nm,
+            center_x_nm=center_x_nm,
+            center_y_nm=center_y_nm,
+            angle_deg=angle_deg,
+            pixels=pixels,
+            channels=channels,
+            timeout_ms=timeout_ms,
+            direction=direction,
+        )
+
     def bias_pulse(self, bias_value: float, bias_pulse_width: float, z_hold: int = 1, rel_abs: int = 2) -> object:
         client = self._require()
         return client.execute_module_method(
@@ -189,6 +251,8 @@ class ScanWorkflowService:
         self,
         *,
         label: str,
+        bias_v: float,
+        setpoint_a: float,
         width_nm: float,
         height_nm: float,
         center_x_nm: float,
@@ -201,6 +265,17 @@ class ScanWorkflowService:
         timeout_ms: int = 300000,
         direction: int = 1,
     ) -> dict:
+        self.session_service.configure_scan(
+            bias_v=bias_v,
+            setpoint_a=setpoint_a,
+            width_nm=width_nm,
+            height_nm=height_nm,
+            center_x_nm=center_x_nm,
+            center_y_nm=center_y_nm,
+            angle_deg=angle_deg,
+            pixels=pixels,
+            channels=channels,
+        )
         pre = self.session_service.scan_and_save(
             label=f"{label}_pre",
             width_nm=width_nm,

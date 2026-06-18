@@ -133,9 +133,9 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
     def _recommended_left_panel_width(self) -> int:
         left_widget = getattr(self, "left_panel_widget", None)
         if left_widget is None:
-            return 680
+            return 560
 
-        preferred_width = max(680, left_widget.sizeHint().width(), left_widget.minimumSizeHint().width())
+        preferred_width = max(560, left_widget.sizeHint().width(), left_widget.minimumSizeHint().width())
         tab_widget = getattr(self, "tab_widget", None)
         tab_bar = tab_widget.tabBar() if tab_widget is not None and hasattr(tab_widget, "tabBar") else None
         if isinstance(tab_bar, QTabBar):

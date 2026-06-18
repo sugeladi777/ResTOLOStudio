@@ -149,6 +149,18 @@ class StudioController:
             context["pulse_width_s"] = float(self.window.pulse_width_edit.text().strip())
         return context
 
+    def _scan_electrical_settings(self) -> dict:
+        return {
+            "bias_v": float(self.window.scan_bias_edit.text().strip()),
+            "setpoint_a": float(self.window.scan_setpoint_edit.text().strip()),
+        }
+
+    def _configured_scan_request(self, *, label: str) -> dict:
+        request = self._scan_geometry()
+        request.update(self._scan_electrical_settings())
+        request["label"] = label
+        return request
+
     def _take_pending_scan_context(self) -> dict:
         context = dict(getattr(self.window, "pending_scan_context", {}) or {})
         self.window.pending_scan_context = None
@@ -191,22 +203,13 @@ class StudioController:
 
     def _visible_sessions(self) -> list[SessionRecord]:
         sessions = [session for session in self._all_sessions() if self._session_matches_filter(session, self._session_filter_text())]
-        sort_text = getattr(getattr(self.window, "session_sort_combo", None), "currentText", lambda: "最近活跃优先")()
-        if sort_text == "扫描结果最多":
-            sessions.sort(key=lambda item: len(getattr(item, "scan_results", []) or []), reverse=True)
-        elif sort_text == "训练结果最多":
-            sessions.sort(key=lambda item: len(getattr(item, "training_results", []) or []), reverse=True)
-        elif sort_text == "推理结果最多":
-            sessions.sort(key=lambda item: len(getattr(item, "inference_results", []) or []), reverse=True)
-        else:
-            sessions.sort(
-                key=lambda item: (
-                    len(getattr(item, "inference_results", []) or []),
-                    len(getattr(item, "training_results", []) or []),
-                    len(getattr(item, "scan_results", []) or []),
-                ),
-                reverse=True,
-            )
+        sessions.sort(
+            key=lambda item: (
+                str(getattr(item, "created_at", "") or ""),
+                str(getattr(item, "id", "") or ""),
+            ),
+            reverse=True,
+        )
         return sessions
 
     def _selected_session(self) -> SessionRecord | None:
@@ -235,23 +238,9 @@ class StudioController:
         self.window.result_list.clear()
         self.window.result_detail_text.clear()
 
-        compare_combo = getattr(self.window, "result_compare_combo", None)
-        if compare_combo is not None:
-            compare_combo.blockSignals(True)
-            compare_combo.clear()
-            compare_combo.addItem("不进行对比")
-            summary_text = getattr(self.window, "result_compare_summary_text", None)
-            if summary_text is not None:
-                summary_text.clear()
-
         labels = self.window.session_workflow_service.result_labels(session)
-        for index, label in enumerate(labels):
+        for label in labels:
             self.window.result_list.addItem(label)
-            if compare_combo is not None:
-                compare_combo.addItem(f"{index + 1}. {label}")
-
-        if compare_combo is not None:
-            compare_combo.blockSignals(False)
 
         preview_label = getattr(self.window, "result_preview_label", None)
         if preview_label is not None:
@@ -262,14 +251,12 @@ class StudioController:
         if preview_caption is not None:
             preview_caption.setText("选择扫描结果后，这里会显示预览。")
 
-        compare_preview_label = getattr(self.window, "result_compare_preview_label", None)
-        if compare_preview_label is not None:
-            compare_preview_label.clear()
-            compare_preview_label.setText("未选择对比结果")
-
-        compare_preview_caption = getattr(self.window, "result_compare_preview_caption", None)
-        if compare_preview_caption is not None:
-            compare_preview_caption.setText("选择对比结果后，这里会显示另一条结果的预览。")
+    def _clear_workspace_view(self) -> None:
+        annotation_tool = getattr(self.window, "annotation_tool", None)
+        annotation_service = getattr(self.window, "annotation_service", None)
+        if annotation_tool is not None and annotation_service is not None:
+            annotation_tool.load_state(annotation_service.create_state([]))
+        self.window.update_button_states()
 
     def _build_result_comparison_summary(self) -> str:
         session = self._selected_session()
@@ -655,9 +642,11 @@ class StudioController:
         if self._restore_session_annotation_state(session):
             return
         if session is None:
+            self._clear_workspace_view()
             return
         results = list(getattr(session, "scan_results", []) or [])
         if not results:
+            self._clear_workspace_view()
             return
         latest_result = results[-1]
         self._show_scan_result_in_workspace(latest_result)
@@ -1147,7 +1136,10 @@ class StudioController:
         session = self._new_session()
         self.window.pending_scan_context = self._pending_scan_context("single_scan")
         self.window.log(f"开始扫描，会话：{session.id}")
-        self._run_service("scan_and_save", lambda: self.window.nanonis_service.scan_and_save(label=session.id, **self._scan_geometry()))
+        self._run_service(
+            "scan_and_save",
+            lambda: self.window.nanonis_service.configure_and_scan_and_save(**self._configured_scan_request(label=session.id)),
+        )
 
     def run_scan_pulse_scan_workflow(self) -> None:
         if not self._confirm("确认", "是否执行预扫、脉冲和后扫的自动流程？"):
@@ -1160,6 +1152,7 @@ class StudioController:
             "scan_pulse_scan",
             lambda: self.window.workflow_service.scan_pulse_scan(
                 label=session.id,
+                **self._scan_electrical_settings(),
                 **self._scan_geometry(),
                 pulse_bias_v=float(self.window.pulse_bias_edit.text().strip()),
                 pulse_width_s=float(self.window.pulse_width_edit.text().strip()),
@@ -1311,9 +1304,6 @@ class StudioController:
         self.window.session_list.clear()
         sessions = self._visible_sessions()
         current_session = getattr(self.window, "current_session", None)
-        browser_context = getattr(self.window, "session_browser_context_text", None)
-        if browser_context is not None:
-            browser_context.setPlainText(self._session_browser_context(sessions))
         for label in self.window.session_workflow_service.session_list_labels(sessions):
             self.window.session_list.addItem(label)
         if sessions:
@@ -1344,15 +1334,10 @@ class StudioController:
         if not detail or result is None:
             self.window.result_detail_text.clear()
             self._update_result_preview(None)
-            if hasattr(self.window, "result_compare_summary_text"):
-                self.window.result_compare_summary_text.setPlainText(self._build_result_comparison_summary())
-            self._update_compare_preview()
             return
         self.window.result_detail_text.setPlainText(detail)
         self._update_result_preview(result)
-        if hasattr(self.window, "result_compare_summary_text"):
-            self.window.result_compare_summary_text.setPlainText(self._build_result_comparison_summary())
-        self._update_compare_preview()
+        self._show_scan_result_in_workspace(result)
 
     def handle_service_result(self, key: str, result: object) -> None:
         self._set_async_busy(False)
