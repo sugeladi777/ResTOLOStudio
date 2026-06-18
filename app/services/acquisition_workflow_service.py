@@ -13,7 +13,7 @@ class ScanGeometry:
     height_nm: float
     center_x_nm: float
     center_y_nm: float
-    angle_deg: float
+    angle_deg: float | None
     pixels: int
     channels: list[str]
 
@@ -56,7 +56,7 @@ class AcquisitionWorkflowService:
             height_nm=float(height_nm.strip()),
             center_x_nm=float(center_x_nm.strip()),
             center_y_nm=float(center_y_nm.strip()),
-            angle_deg=0.0,
+            angle_deg=None,
             pixels=int(pixels.strip()),
             channels=[part.strip() for part in channels.split(",") if part.strip()],
         )

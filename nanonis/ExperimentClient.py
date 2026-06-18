@@ -280,9 +280,15 @@ class NanonisExperimentClient:
     def set_setpoint(self, setpoint_a):
         self.zctrl.SetpntSet(setpoint_a)
 
-    def set_scan_frame_nm(self, width_nm, height_nm=None, center_x_nm=0, center_y_nm=0, angle_deg=0):
+    def set_scan_frame_nm(self, width_nm, height_nm=None, center_x_nm=0, center_y_nm=0, angle_deg=None):
         if height_nm is None:
             height_nm = width_nm
+        if angle_deg is None:
+            current_frame = self.scan.FrameGet()
+            if len(current_frame) >= 5:
+                angle_deg = current_frame[4]
+            else:
+                angle_deg = 0
         self.scan.FrameSet(
             center_x_nm * 1e-9,
             center_y_nm * 1e-9,
@@ -313,7 +319,7 @@ class NanonisExperimentClient:
         timeout_ms=300_000,
         center_x_nm=0,
         center_y_nm=0,
-        angle_deg=0,
+        angle_deg=None,
         start_poll_timeout_ms=8000,
         start_poll_interval_ms=250,
     ):

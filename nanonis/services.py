@@ -111,7 +111,16 @@ class NanonisSessionService:
                 return current_indexes
             raise
 
-    def apply_scan(self, width_nm: float, height_nm: float, center_x_nm: float, center_y_nm: float, angle_deg: float, pixels: int, channels: Iterable[str]) -> dict:
+    def apply_scan(
+        self,
+        width_nm: float,
+        height_nm: float,
+        center_x_nm: float,
+        center_y_nm: float,
+        angle_deg: float | None,
+        pixels: int,
+        channels: Iterable[str],
+    ) -> dict:
         client = self._require()
         with self._slow_command_timeout(client):
             client.set_scan_frame_nm(width_nm, height_nm, center_x_nm, center_y_nm, angle_deg)
@@ -128,7 +137,7 @@ class NanonisSessionService:
         height_nm: float,
         center_x_nm: float,
         center_y_nm: float,
-        angle_deg: float,
+        angle_deg: float | None,
         pixels: int,
         channels: Iterable[str],
     ) -> dict:
@@ -156,7 +165,20 @@ class NanonisSessionService:
         client.set_feedback(enabled)
         return self._safe_status(fallback_message="反馈状态已切换，但状态读取超时。")
 
-    def scan_and_save(self, *, label: str, width_nm: float, height_nm: float, center_x_nm: float, center_y_nm: float, angle_deg: float, pixels: int, channels: Iterable[str], timeout_ms: int = 300000, direction: int = 1) -> dict:
+    def scan_and_save(
+        self,
+        *,
+        label: str,
+        width_nm: float,
+        height_nm: float,
+        center_x_nm: float,
+        center_y_nm: float,
+        angle_deg: float | None,
+        pixels: int,
+        channels: Iterable[str],
+        timeout_ms: int = 300000,
+        direction: int = 1,
+    ) -> dict:
         client = self._require()
         channel_indexes = self._resolve_scan_channels(channels)
         result = client.scan_and_save(
@@ -198,7 +220,7 @@ class NanonisSessionService:
         height_nm: float,
         center_x_nm: float,
         center_y_nm: float,
-        angle_deg: float,
+        angle_deg: float | None,
         pixels: int,
         channels: Iterable[str],
         timeout_ms: int = 300000,
@@ -257,7 +279,7 @@ class ScanWorkflowService:
         height_nm: float,
         center_x_nm: float,
         center_y_nm: float,
-        angle_deg: float,
+        angle_deg: float | None,
         pixels: int,
         channels: Iterable[str],
         pulse_bias_v: float,
