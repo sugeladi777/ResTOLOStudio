@@ -71,6 +71,7 @@ def test_training_runner_service_runs_resnet_and_emits_callbacks(monkeypatch):
             epochs=5,
             batch_size=2,
             enable_imbalance=True,
+            enable_augment=False,
             callbacks=callbacks,
         )
     finally:
@@ -78,5 +79,6 @@ def test_training_runner_service_runs_resnet_and_emits_callbacks(monkeypatch):
 
     assert any("开始训练分类模型" in line for line in logs)
     assert any("类别不平衡处理：开启" in line for line in logs)
+    assert "Data augmentation: disabled" in logs
     assert progress == [(1, 5), (2, 5)]
     assert losses[-1] == (2, 0.3, 0.1)

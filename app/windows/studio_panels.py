@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
+    QComboBox,
     QFormLayout,
     QFrame,
     QGridLayout,
@@ -51,6 +52,12 @@ class StudioPanelsMixin:
             """
         )
         label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        return label
+
+    def _preview_caption(self, text: str = "") -> QLabel:
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setStyleSheet(f"color: {MUTED_COLOR};")
         return label
 
     def _build_info_banner(self, title: str, description: str) -> QWidget:
@@ -106,7 +113,6 @@ class StudioPanelsMixin:
         toolbar_layout = QVBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(0, 0, 0, 0)
         toolbar_layout.setSpacing(6)
-
         self.session_search_edit = QLineEdit()
         self.session_search_edit.setPlaceholderText("搜索会话标签、阶段或结果数量")
         toolbar_layout.addWidget(self.session_search_edit)
@@ -135,6 +141,8 @@ class StudioPanelsMixin:
         session_actions.addWidget(self.rename_session_btn, 1, 0)
         session_actions.addWidget(self.open_session_dir_btn, 1, 1)
         session_layout.addLayout(session_actions)
+        self.session_browser_context_text = self._styled_readonly_text(min_height=72, max_height=96, placeholder="这里会显示会话摘要。")
+        session_layout.addWidget(self.session_browser_context_text)
         layout.addWidget(session_group)
 
         self.result_list = QListWidget()
@@ -143,14 +151,17 @@ class StudioPanelsMixin:
         self.result_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.result_list.setTextElideMode(Qt.ElideNone)
         self.result_list.setStyleSheet("font-size: 16px;")
-        self.result_detail_text = self._styled_readonly_text(
-            min_height=144,
-            max_height=220,
-            placeholder="选择扫描结果后，这里会显示扫描参数、导出文件和来源信息。",
-        )
+        self.result_detail_text = self._styled_readonly_text(min_height=144, max_height=220, placeholder="选择扫描结果后，这里会显示扫描参数、导出文件和来源信息。")
         self.result_detail_text.setStyleSheet(self.result_detail_text.styleSheet() + "QTextEdit { font-size: 15px; line-height: 1.45; }")
+        self.result_preview_label = self._preview_label("尚未选择结果", minimum_height=220)
+        self.result_preview_caption = self._preview_caption("选择扫描结果后，这里会显示预览图。")
+        self.result_compare_combo = QComboBox()
+        self.result_compare_combo.addItem("不比较")
+        self.result_compare_summary_text = self._styled_readonly_text(min_height=96, max_height=120, placeholder="这里会显示对比摘要。")
+        self.result_compare_preview_label = self._preview_label("尚未选择对比项", minimum_height=200)
+        self.result_compare_preview_caption = self._preview_caption("选择对比项后，这里会显示对比预览。")
 
-        self.use_selected_result_btn = self.create_button("用于推理", self.use_selected_result_for_inference, accent=True)
+        self.use_selected_result_btn = self.create_button("用于推理", self.use_selected_result_for_inference)
         self.open_result_dir_btn = self.create_button("打开结果目录", self.open_selected_result_directory)
         self.refresh_sessions_btn = self.create_button("刷新会话", self.reload_sessions)
 
@@ -165,11 +176,19 @@ class StudioPanelsMixin:
         result_actions.addWidget(self.refresh_sessions_btn, 1, 0, 1, 2)
         result_layout.addLayout(result_actions)
         result_layout.addWidget(self.result_detail_text)
+        result_layout.addWidget(self.result_preview_label)
+        result_layout.addWidget(self.result_preview_caption)
+        result_layout.addWidget(self.create_label("结果对比"))
+        result_layout.addWidget(self.result_compare_combo)
+        result_layout.addWidget(self.result_compare_summary_text)
+        result_layout.addWidget(self.result_compare_preview_label)
+        result_layout.addWidget(self.result_compare_preview_caption)
         layout.addWidget(result_group)
         layout.addStretch()
 
         self.session_list.currentRowChanged.connect(self._session_selected)
         self.result_list.currentRowChanged.connect(self._result_selected)
+        self.result_compare_combo.currentIndexChanged.connect(self._result_comparison_changed)
         self.session_search_edit.textChanged.connect(lambda _text: self.reload_sessions())
         return tab
 
@@ -180,14 +199,12 @@ class StudioPanelsMixin:
         form = QGridLayout()
         form.setHorizontalSpacing(8)
         form.setVerticalSpacing(6)
-
         self.nano_ip_edit = self.create_line_edit("127.0.0.1")
         self.nano_ip_edit.setText("127.0.0.1")
         self.nano_port_edit = self.create_line_edit("6501")
         self.nano_port_edit.setText("6501")
         self.nano_version_edit = self.create_line_edit("10380")
         self.nano_version_edit.setText("10380")
-
         form.addWidget(self.create_label("IP"), 0, 0)
         form.addWidget(self.nano_ip_edit, 0, 1)
         form.addWidget(self.create_label("端口"), 0, 2)
@@ -202,12 +219,7 @@ class StudioPanelsMixin:
         button_grid.addWidget(self.create_button("断开", self.disconnect_nanonis), 0, 1)
         button_grid.addWidget(self.create_button("刷新状态", self.refresh_nanonis_status), 0, 2)
 
-        self.nano_status_text = self._styled_readonly_text(
-            min_height=60,
-            max_height=80,
-            placeholder="连接后，这里会显示设备状态与最新反馈。",
-        )
-
+        self.nano_status_text = self._styled_readonly_text(min_height=60, max_height=80, placeholder="连接后，这里会显示设备状态与最新反馈。")
         layout.addLayout(form)
         layout.addLayout(button_grid)
         layout.addWidget(self.nano_status_text)
@@ -295,7 +307,6 @@ class StudioPanelsMixin:
         form.setVerticalSpacing(6)
         form.addRow("脉冲偏压 (V)", self.pulse_bias_edit)
         form.addRow("脉冲宽度 (s)", self.pulse_width_edit)
-
         layout.addLayout(form)
         layout.addWidget(
             self._build_info_banner(

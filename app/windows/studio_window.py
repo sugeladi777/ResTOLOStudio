@@ -4,8 +4,8 @@ from pathlib import Path
 
 from PyQt5.QtCore import QTimer, pyqtSignal
 from PyQt5.QtGui import QShowEvent
-from PyQt5.QtWidgets import QTabBar
 from PyQt5.QtWidgets import QMainWindow
+from PyQt5.QtWidgets import QTabBar
 
 from app.runtime import AppRuntime
 from app.windows.runtime_controller import StudioRuntimeController
@@ -30,7 +30,7 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
         self._style_refresh_timer.timeout.connect(self._refresh_responsive_styles)
         initialize_studio_shell(self)
         self.runtime = runtime or AppRuntime.create(PROJECT_ROOT)
-        self.setWindowTitle("ReSTOLO Studio")
+        self.setWindowTitle("ReSTOLO - 分子检测与分类系统")
         self._bind_runtime_services()
         self.inference_service = self.runtime.create_inference_service(self.inference_manager)
         self.current_session = self.runtime.create_startup_session("startup")

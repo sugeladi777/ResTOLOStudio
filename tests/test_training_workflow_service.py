@@ -82,6 +82,7 @@ def test_training_workflow_service_prepares_yolo_plan_and_context(tmp_path: Path
     assert plan is not None
     assert Path(plan.data_yaml_path).exists()
     assert plan.img_size >= 320
+    assert plan.class_names == ["object"]
     assert training_manager.calls
     assert any("已生成数据配置" in message for message in logs)
 
@@ -174,9 +175,9 @@ def test_training_workflow_service_remaps_sparse_yolo_classes(tmp_path: Path):
     plan = workflow.prepare_yolo_training(state, lambda path: path, training_manager, logs.append)
 
     assert plan is not None
-    assert plan.class_names == ["1"]
+    assert plan.class_names == ["object"]
     assert training_manager.calls[0][2] == 1
-    assert training_manager.calls[0][3] == ["1"]
+    assert training_manager.calls[0][3] == ["object"]
     train_labels_dir = Path(training_manager.calls[0][0]).parents[1] / "labels" / "train"
     assert next(train_labels_dir.glob("*.txt")).read_text(encoding="utf-8").strip() == "0 0.5 0.5 0.5 0.5"
 

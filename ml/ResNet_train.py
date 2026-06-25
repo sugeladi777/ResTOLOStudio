@@ -760,6 +760,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
     parser.add_argument('--pretrained_model', type=str, default='', help='Path to pretrained ResNet model')
     parser.add_argument('--imbalance', type=_parse_bool_arg, default=True, help='Whether to handle class imbalance via oversampling')
+    parser.add_argument('--augment', type=_parse_bool_arg, default=True, help='Whether to augment the training dataset')
     
     args = parser.parse_args()
     
@@ -776,6 +777,7 @@ def main():
     lr=args.lr
     batch_size=args.batch_size
     enable_imbalance=args.imbalance
+    enable_augment=args.augment
     
     # 确保保存路径存在
     import os
@@ -796,7 +798,10 @@ def main():
         oversample_minority_classes(training_path, ir_threshold=10, target_ratio=0.5)
         
     #增强训练数据集
-    fortifier(training_path)
+    if enable_augment:
+        fortifier(training_path)
+    else:
+        print("数据增强已禁用，跳过 fortifier")
     
     # 加载预训练的resnet模型
     resnet_model = None

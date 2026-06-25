@@ -64,7 +64,7 @@ class AnnotationTool(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setMinimumSize(840, 560)
+        self.setMinimumSize(640, 560)
         self._pending_refresh_timer = QTimer(self)
         self._pending_refresh_timer.setSingleShot(True)
         self._pending_refresh_timer.timeout.connect(self._refresh_current_image)

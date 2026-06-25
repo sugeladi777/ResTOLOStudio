@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import QLineEdit, QMessageBox, QPushButton
 
 
 class StudioRuntimeController:
-    """Keeps the simplified studio UI in sync with runtime state."""
+    """Keeps the studio UI in sync with runtime state."""
 
     def __init__(self, window):
         self.window = window
@@ -65,12 +65,12 @@ class StudioRuntimeController:
         return sorted(used_classes)
 
     def _model_status_text(self) -> str:
-        model_status: list[str] = []
+        parts: list[str] = []
         if self._has_yolo_model():
-            model_status.append("检测模型已就绪")
+            parts.append("检测模型已就绪")
         if self._has_resnet_model():
-            model_status.append("分类模型已就绪")
-        return "，".join(model_status) if model_status else "模型尚未加载。"
+            parts.append("分类模型已就绪")
+        return "，".join(parts) if parts else "模型尚未加载。"
 
     def _training_dataset_status_text(self, image_count: int, annotation_count: int) -> str:
         train_data_path = getattr(self.window, "train_resnet_data_path", None)
@@ -78,20 +78,15 @@ class StudioRuntimeController:
         if image_count and annotation_count:
             return f"训练数据已就绪：{image_count} 张图像，{annotation_count} 个标注。"
         if has_resnet_data:
-            return "已加载外部分类数据。"
+            return "已加载外部分类型数据。"
         return "训练数据尚未准备好。"
 
     def _training_run_status_text(self) -> str:
-        pending_training = getattr(self.window, "pending_training_context", None)
-        if pending_training is not None:
-            return "训练任务进行中。"
-        return "当前没有训练任务。"
+        return "训练任务进行中。" if getattr(self.window, "pending_training_context", None) is not None else "当前没有训练任务。"
 
     def _inference_result_status_text(self) -> str:
-        pending_infer = getattr(self.window, "pending_inference_session_id", None)
-        if pending_infer:
-            return f"推理任务进行中：{pending_infer}"
-        return "当前没有推理结果。"
+        pending = getattr(self.window, "pending_inference_session_id", None)
+        return f"推理任务进行中：{pending}" if pending else "当前没有推理结果。"
 
     def _refresh_status_labels(self) -> None:
         state = self._annotation_state()
@@ -121,10 +116,7 @@ class StudioRuntimeController:
         model_text = self._model_status_text()
         self._set_label_text("training_model_status_detail", model_text)
         self._set_label_text("inference_model_status_detail", model_text)
-
-        dataset_text = self._training_dataset_status_text(len(images), annotation_count)
-        self._set_label_text("training_dataset_status_detail", dataset_text)
-
+        self._set_label_text("training_dataset_status_detail", self._training_dataset_status_text(len(images), annotation_count))
         self._set_label_text("training_run_status_detail", self._training_run_status_text())
         self._set_label_text("inference_result_status_detail", self._inference_result_status_text())
 
@@ -133,7 +125,7 @@ class StudioRuntimeController:
             0: "采集",
             1: "标注",
             2: "训练",
-            3: "推理",
+            3: "应用",
             4: "结果",
         }.get(current_index, "工作台")
         self._set_label_text("workspace_mode_detail", mode_text)
@@ -287,7 +279,7 @@ class StudioRuntimeController:
                 0: "已切换到采集模式。",
                 1: "已切换到标注模式。",
                 2: "已切换到训练模式。",
-                3: "已切换到推理模式。",
+                3: "已切换到应用模式。",
                 4: "已切换到结果页面。",
             }
             if index in mode_logs:

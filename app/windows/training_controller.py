@@ -245,6 +245,9 @@ class StudioTrainingController:
                 epochs=epochs,
                 batch_size=batch_size,
                 enable_imbalance=self.window.imbalance_checkbox.isChecked(),
+                enable_augment=getattr(self.window, "augment_checkbox", None).isChecked()
+                if getattr(self.window, "augment_checkbox", None) is not None
+                else True,
                 callbacks=ResnetTrainingCallbacks(
                     log=self.window.log,
                     on_progress=lambda current, total: self.window.training_progress_signal.emit(current, total),

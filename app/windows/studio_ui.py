@@ -5,17 +5,17 @@ from PyQt5.QtGui import QColor, QCursor, QFont, QPainter
 from PyQt5.QtWidgets import QApplication, QGroupBox, QLabel, QLineEdit, QPushButton, QToolTip, QVBoxLayout
 
 
-BASE_COLOR = "#8A939B"
-HIGHLIGHT_COLOR = "#D3D8DC"
-MUTED_COLOR = "#A7AFB6"
-ACCENT_COLOR = "#A4ADB4"
-DEEP_SHADE_COLOR = "#444A50"
-DARK_BG = "#181818"
-PANEL_BG = "#232323"
-TEXT_COLOR = "#E4E4E4"
-BORDER_COLOR = "#3A3A3A"
-SELECTED_BG = "#5E768A"
-SELECTED_BORDER = "#7E98AE"
+BASE_COLOR = "#5AE54A"
+HIGHLIGHT_COLOR = "#D3FF9E"
+MUTED_COLOR = "#B0FC97"
+ACCENT_COLOR = "#9CF96D"
+DEEP_SHADE_COLOR = "#008400"
+DARK_BG = "#1A1A1A"
+PANEL_BG = "#252525"
+TEXT_COLOR = "#E8E8E8"
+BORDER_COLOR = "#404040"
+SELECTED_BG = BASE_COLOR
+SELECTED_BORDER = BASE_COLOR
 
 
 class RequiredButton(QPushButton):
@@ -84,26 +84,26 @@ class StudioUiMixin:
                 padding: {self._scaled_int(8, scale)}px {self._scaled_int(12, scale)}px;
                 border: 1px solid {BORDER_COLOR};
                 border-bottom: none;
-                border-top-left-radius: 2px;
-                border-top-right-radius: 2px;
-                font-weight: normal;
-                font-size: {self._scaled_int(14, scale)}px;
-                min-width: {self._scaled_int(64, scale)}px;
+                border-top-left-radius: {self._scaled_int(5, scale)}px;
+                border-top-right-radius: {self._scaled_int(5, scale)}px;
+                font-weight: bold;
+                font-size: {self._scaled_int(13, scale)}px;
+                min-width: {self._scaled_int(60, scale)}px;
             }}
             QTabBar::tab:first {{
-                border-top-left-radius: 2px;
+                border-top-left-radius: {self._scaled_int(8, scale)}px;
             }}
             QTabBar::tab:last {{
-                border-top-right-radius: 2px;
+                border-top-right-radius: {self._scaled_int(8, scale)}px;
             }}
             QTabBar::tab:selected {{
                 background-color: {SELECTED_BG};
-                color: #F5F7F8;
+                color: {DARK_BG};
                 border-color: {SELECTED_BORDER};
             }}
             QTabBar::tab:hover {{
-                background-color: #2B2B2B;
-                color: {TEXT_COLOR};
+                background-color: {MUTED_COLOR};
+                color: {DARK_BG};
             }}
             QTabBar QToolButton {{
                 max-width: 0px;
@@ -115,35 +115,35 @@ class StudioUiMixin:
                 margin: 0px;
             }}
             QGroupBox {{
-                border: 1px solid #2E2E2E;
-                border-radius: 2px;
-                margin-top: {self._scaled_int(10, scale)}px;
-                padding-top: {self._scaled_int(5, scale)}px;
-                font-weight: normal;
+                border: 2px solid {BORDER_COLOR};
+                border-radius: {self._scaled_int(8, scale)}px;
+                margin-top: {self._scaled_int(12, scale)}px;
+                padding-top: {self._scaled_int(10, scale)}px;
+                font-weight: bold;
                 font-size: {self._scaled_int(14, scale)}px;
-                color: {TEXT_COLOR};
+                color: {HIGHLIGHT_COLOR};
                 background-color: transparent;
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
-                left: {self._scaled_int(6, scale)}px;
-                padding: 0 {self._scaled_int(3, scale)}px;
-                color: {TEXT_COLOR};
+                left: {self._scaled_int(10, scale)}px;
+                padding: 0 {self._scaled_int(5, scale)}px;
+                color: {HIGHLIGHT_COLOR};
             }}
             QPushButton {{
                 background-color: {PANEL_BG};
                 color: {TEXT_COLOR};
                 border: 1px solid {BORDER_COLOR};
-                border-radius: 2px;
-                padding: {self._scaled_int(7, scale)}px {self._scaled_int(12, scale)}px;
-                font-weight: normal;
+                border-radius: {self._scaled_int(6, scale)}px;
+                padding: {self._scaled_int(6, scale)}px {self._scaled_int(16, scale)}px;
+                font-weight: bold;
                 font-size: {self._scaled_int(14, scale)}px;
-                min-height: {self._scaled_int(34, scale)}px;
+                min-height: {self._scaled_int(24, scale)}px;
             }}
             QPushButton:hover {{
-                background-color: #2F2F2F;
-                color: {TEXT_COLOR};
+                background-color: {MUTED_COLOR};
+                color: {DARK_BG};
                 border-color: {BASE_COLOR};
             }}
             QPushButton:focus {{
@@ -162,31 +162,50 @@ class StudioUiMixin:
                 border-color: #333333;
             }}
             QPushButton[accent="true"] {{
-                background-color: {SELECTED_BG};
-                color: #F5F7F8;
-                border: 1px solid {SELECTED_BORDER};
+                background-color: {BASE_COLOR};
+                color: {DARK_BG};
+                border: 1px solid {BASE_COLOR};
             }}
             QPushButton[accent="true"]:hover {{
-                background-color: #70879A;
-                border-color: #8EA6BA;
+                background-color: {ACCENT_COLOR};
+                border-color: {ACCENT_COLOR};
             }}
             QPushButton[accent="true"]:focus {{
-                background-color: {SELECTED_BG};
-                color: #F5F7F8;
-                border: 1px solid {SELECTED_BORDER};
+                background-color: {BASE_COLOR};
+                color: {DARK_BG};
+                border: 1px solid {BASE_COLOR};
                 outline: none;
             }}
             QLineEdit, QSpinBox, QTextEdit {{
                 background-color: {DARK_BG};
                 color: {TEXT_COLOR};
                 border: 1px solid {BORDER_COLOR};
-                border-radius: 2px;
+                border-radius: {self._scaled_int(6, scale)}px;
                 padding: {self._scaled_int(6, scale)}px {self._scaled_int(10, scale)}px;
                 font-size: {self._scaled_int(14, scale)}px;
                 min-height: {self._scaled_int(30, scale)}px;
             }}
             QLineEdit:focus, QSpinBox:focus {{
                 border: 2px solid {BASE_COLOR};
+            }}
+            QComboBox {{
+                background-color: {DARK_BG};
+                color: {TEXT_COLOR};
+                border: 1px solid {BORDER_COLOR};
+                border-radius: {self._scaled_int(6, scale)}px;
+                padding: {self._scaled_int(6, scale)}px {self._scaled_int(10, scale)}px;
+                font-size: {self._scaled_int(14, scale)}px;
+                min-height: {self._scaled_int(30, scale)}px;
+            }}
+            QComboBox:focus {{
+                border: 2px solid {BASE_COLOR};
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {PANEL_BG};
+                color: {TEXT_COLOR};
+                border: 1px solid {BORDER_COLOR};
+                selection-background-color: {BASE_COLOR};
+                selection-color: {DARK_BG};
             }}
             QLabel {{
                 color: {TEXT_COLOR};
@@ -208,13 +227,13 @@ class StudioUiMixin:
             }}
             QListWidget::item {{
                 padding: {self._scaled_int(7, scale)}px {self._scaled_int(8, scale)}px;
-                border-radius: 2px;
+                border-radius: {self._scaled_int(6, scale)}px;
                 margin-bottom: 1px;
                 min-height: {self._scaled_int(30, scale)}px;
             }}
             QListWidget::item:selected {{
-                background-color: rgba(94, 118, 138, 0.92);
-                color: #F5F7F8;
+                background-color: rgba(90, 229, 74, 0.92);
+                color: {DARK_BG};
             }}
             QProgressBar {{
                 border: 1px solid {BORDER_COLOR};
@@ -229,7 +248,7 @@ class StudioUiMixin:
             QProgressBar::chunk {{
                 background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 {BASE_COLOR}, stop:1 {ACCENT_COLOR});
-                border-radius: 2px;
+                border-radius: {self._scaled_int(6, scale)}px;
             }}
             QSplitter::handle {{
                 background-color: {BORDER_COLOR};
@@ -261,11 +280,12 @@ class StudioUiMixin:
                 border-radius: 2px;
             }}
             QMenu::item:selected {{
-                background-color: #2F2F2F;
+                background-color: {BASE_COLOR};
+                color: {DARK_BG};
             }}
             QScrollArea {{
                 border: 1px solid {BORDER_COLOR};
-                border-radius: 2px;
+                border-radius: {self._scaled_int(6, scale)}px;
                 background-color: {DARK_BG};
             }}
             QMessageBox {{

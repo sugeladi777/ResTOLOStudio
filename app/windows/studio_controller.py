@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import os
 import threading
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QPainter, QPixmap
-from PyQt5.QtWidgets import QCheckBox, QFileDialog, QInputDialog, QMessageBox
+from PyQt5.QtWidgets import QApplication, QCheckBox, QFileDialog, QInputDialog, QMessageBox
 
 from app.core import ScanResultRecord, SessionRecord
 from app.windows.studio_ui import BASE_COLOR, BORDER_COLOR, PANEL_BG, TEXT_COLOR
@@ -170,7 +172,8 @@ class StudioController:
         enriched = dict(payload)
         raw_context = dict(enriched.get("scan_context", {}) or {})
         raw_context.update(context)
-        enriched["scan_context"] = raw_context
+        if raw_context:
+            enriched["scan_context"] = raw_context
         return enriched
 
     def _all_sessions(self) -> list[SessionRecord]:
@@ -251,12 +254,33 @@ class StudioController:
         if preview_caption is not None:
             preview_caption.setText("选择扫描结果后，这里会显示预览。")
 
+        compare_combo = getattr(self.window, "result_compare_combo", None)
+        if compare_combo is not None:
+            if hasattr(compare_combo, "blockSignals"):
+                compare_combo.blockSignals(True)
+            if hasattr(compare_combo, "clear"):
+                compare_combo.clear()
+            if hasattr(compare_combo, "addItem"):
+                compare_combo.addItem("不比较")
+                for result in list(getattr(session, "scan_results", []) or []):
+                    compare_combo.addItem(getattr(result, "label", "result"))
+            if hasattr(compare_combo, "setCurrentIndex"):
+                compare_combo.setCurrentIndex(0)
+            if hasattr(compare_combo, "blockSignals"):
+                compare_combo.blockSignals(False)
+
+        if hasattr(self.window, "result_compare_summary_text"):
+            self.window.result_compare_summary_text.setPlainText(self._build_result_comparison_summary())
+        self._set_compare_preview_placeholder("尚未选择对比项", "选择对比项后，这里会显示对比预览。")
+
     def _clear_workspace_view(self) -> None:
         annotation_tool = getattr(self.window, "annotation_tool", None)
         annotation_service = getattr(self.window, "annotation_service", None)
         if annotation_tool is not None and annotation_service is not None:
             annotation_tool.load_state(annotation_service.create_state([]))
-        self.window.update_button_states()
+        update_button_states = getattr(self.window, "update_button_states", None)
+        if callable(update_button_states):
+            update_button_states()
 
     def _build_result_comparison_summary(self) -> str:
         session = self._selected_session()
@@ -399,12 +423,15 @@ class StudioController:
         session = self._selected_session()
         if compare_label is None or compare_combo is None or session is None:
             return
+        if QApplication.instance() is None:
+            self._set_compare_preview_placeholder("预览不可用", "当前上下文中没有活动的 Qt 应用。")
+            return
 
         compare_index = compare_combo.currentIndex() - 1
         results = getattr(session, "scan_results", []) or []
         current_index = self.window.result_list.currentRow()
         if compare_index < 0 or compare_index >= len(results) or compare_index == current_index:
-            self._set_compare_preview_placeholder("未选择对比结果", "选择对比结果后，这里会显示另一条结果的预览。")
+            self._set_compare_preview_placeholder("尚未选择对比结果", "选择对比结果后，这里会显示另一条结果的预览。")
             return
 
         other = results[compare_index]
@@ -558,29 +585,15 @@ class StudioController:
             return
 
         yolo_path = str(payload.get("recent_yolo_model_path", "") or "")
-        if (
-            yolo_path
-            and os.path.exists(yolo_path)
-            and model_manager is not None
-            and self._targets_are_empty(*self._model_targets("yolo"))
-        ):
+        if yolo_path and os.path.exists(yolo_path) and model_manager is not None and self._targets_are_empty(*self._model_targets("yolo")):
             self._load_yolo_model_path(yolo_path)
 
         resnet_path = str(payload.get("recent_resnet_model_path", "") or "")
-        if (
-            resnet_path
-            and os.path.exists(resnet_path)
-            and model_manager is not None
-            and self._targets_are_empty(*self._model_targets("resnet"))
-        ):
+        if resnet_path and os.path.exists(resnet_path) and model_manager is not None and self._targets_are_empty(*self._model_targets("resnet")):
             self._load_resnet_model_path(resnet_path)
 
         classes_path = str(payload.get("recent_classes_yaml_path", "") or "")
-        if (
-            classes_path
-            and os.path.exists(classes_path)
-            and self._targets_are_empty(*self._classes_targets())
-        ):
+        if classes_path and os.path.exists(classes_path) and self._targets_are_empty(*self._classes_targets()):
             self._load_classes_path(classes_path)
 
     def _new_session(self) -> SessionRecord:
@@ -666,6 +679,9 @@ class StudioController:
         preview_label = getattr(self.window, "result_preview_label", None)
         if preview_label is None:
             return
+        if QApplication.instance() is None:
+            self._set_result_preview_placeholder("预览不可用", "当前上下文中没有活动的 Qt 应用。")
+            return
 
         preview_path = self._preview_path_from_result(result)
         if not preview_path:
@@ -693,6 +709,8 @@ class StudioController:
         annotation_service = getattr(self.window, "annotation_service", None)
         session = getattr(self.window, "current_session", None)
         if annotation_tool is None or annotation_service is None or session is None:
+            return
+        if not hasattr(annotation_service, "create_state"):
             return
         preview_paths: list[str] = []
         selected_preview_path = self._preview_path_from_result(result)
@@ -1062,7 +1080,8 @@ class StudioController:
             except Exception as exc:  # noqa: BLE001
                 self.window.log(f"写入类别文件失败：{exc}")
         self.window.log(f"已标注类别：{list(crop_summary.actual_classes)}")
-        self.window.log(f"分类裁剪类别统计：{crop_summary.class_counts}")
+        if hasattr(crop_summary, "class_counts"):
+            self.window.log(f"分类裁剪类别统计：{crop_summary.class_counts}")
         self.window.log(f"分类裁剪完成，共生成 {crop_summary.crop_count} 张")
 
     def load_yolo_model(self) -> None:
@@ -1306,6 +1325,9 @@ class StudioController:
         current_session = getattr(self.window, "current_session", None)
         for label in self.window.session_workflow_service.session_list_labels(sessions):
             self.window.session_list.addItem(label)
+        session_browser_context_text = getattr(self.window, "session_browser_context_text", None)
+        if session_browser_context_text is not None and hasattr(session_browser_context_text, "setPlainText"):
+            session_browser_context_text.setPlainText(self._session_browser_context(sessions))
         if sessions:
             selected_index = 0
             if current_session is not None:
@@ -1334,10 +1356,16 @@ class StudioController:
         if not detail or result is None:
             self.window.result_detail_text.clear()
             self._update_result_preview(None)
+            if hasattr(self.window, "result_compare_summary_text"):
+                self.window.result_compare_summary_text.setPlainText(self._build_result_comparison_summary())
+            self._update_compare_preview()
             return
         self.window.result_detail_text.setPlainText(detail)
         self._update_result_preview(result)
         self._show_scan_result_in_workspace(result)
+        if hasattr(self.window, "result_compare_summary_text"):
+            self.window.result_compare_summary_text.setPlainText(self._build_result_comparison_summary())
+        self._update_compare_preview()
 
     def handle_service_result(self, key: str, result: object) -> None:
         self._set_async_busy(False)

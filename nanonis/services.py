@@ -123,6 +123,7 @@ class NanonisSessionService:
     ) -> dict:
         client = self._require()
         with self._slow_command_timeout(client):
+            client.set_feedback(True)
             client.set_scan_frame_nm(width_nm, height_nm, center_x_nm, center_y_nm, angle_deg)
             channel_indexes = self._resolve_scan_channels(channels)
             client.set_scan_buffer(channel_indexes=channel_indexes, pixels=pixels, lines=pixels)
@@ -143,6 +144,7 @@ class NanonisSessionService:
     ) -> dict:
         client = self._require()
         with self._slow_command_timeout(client):
+            client.set_feedback(True)
             client.set_bias(bias_v)
             client.set_setpoint(setpoint_a)
             client.set_scan_frame_nm(width_nm, height_nm, center_x_nm, center_y_nm, angle_deg)

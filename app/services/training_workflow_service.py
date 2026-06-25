@@ -95,7 +95,9 @@ class TrainingWorkflowService:
         val_images_dir = os.path.join(temp_dir, "images", "val")
         train_labels_dir = os.path.join(temp_dir, "labels", "train")
         val_labels_dir = os.path.join(temp_dir, "labels", "val")
-        class_index_map, class_names = self.dataset_service.remap_class_indices(state)
+        used_classes = self.dataset_service.annotation_class_summary(state).used_classes
+        class_index_map = {int(cls): 0 for cls in used_classes}
+        class_names = ["object"]
         self.dataset_service.write_yolo_split(
             state,
             gray_path_resolver,
@@ -116,7 +118,7 @@ class TrainingWorkflowService:
         training_manager.generate_data_yaml(
             train_images_dir,
             val_images_dir,
-            len(class_names),
+            1,
             class_names,
             data_yaml_path,
         )

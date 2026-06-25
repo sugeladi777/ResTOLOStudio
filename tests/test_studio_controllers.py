@@ -398,6 +398,7 @@ def test_studio_window_prefers_latest_session_training_models_on_startup(tmp_pat
     assert window.infer_yolo_model_path.text() == "trained-best.pt"
     assert window.train_resnet_model_path.text() == "trained-best.saving"
     assert window.infer_resnet_model_path.text() == "trained-best.saving"
+    assert window.train_classes_path.text() == "trained-classes.yaml"
     assert window.infer_classes_path.text() == "trained-classes.yaml"
 
 
@@ -416,6 +417,7 @@ def test_studio_window_prefers_session_annotation_classes_when_no_training_recor
     app.processEvents()
 
     assert window.current_session.id == session.id
+    assert window.train_classes_path.text() == str(classes_path)
     assert window.infer_classes_path.text() == str(classes_path)
 
 
@@ -475,6 +477,7 @@ def test_studio_window_restores_saved_external_resource_paths_from_config(tmp_pa
     assert window.infer_yolo_model_path.text() == str(yolo_path)
     assert window.train_resnet_model_path.text() == str(resnet_path)
     assert window.infer_resnet_model_path.text() == str(resnet_path)
+    assert window.train_classes_path.text() == str(classes_path)
     assert window.infer_classes_path.text() == str(classes_path)
     assert window.train_resnet_data_path.text() == ""
 
@@ -534,6 +537,7 @@ def test_studio_window_keeps_session_training_models_over_saved_recent_paths(tmp
     assert window.infer_yolo_model_path.text() == "session-best.pt"
     assert window.train_resnet_model_path.text() == "session-best.saving"
     assert window.infer_resnet_model_path.text() == "session-best.saving"
+    assert window.train_classes_path.text() == "session-classes.yaml"
     assert window.infer_classes_path.text() == "session-classes.yaml"
 
 
@@ -994,7 +998,7 @@ def test_runtime_controller_update_button_states_and_tab_sync(tmp_path: Path):
     assert window.start_inference_btn.enabled is True
     assert annotation_tool.mode_changes[-1] is False
     assert inference_manager.loaded_batches[-1] == ["gray::color.png"]
-    assert logs[-1] == "已切换到推理模式。"
+    assert logs[-1] == "已切换到应用模式。"
 
 
 def test_runtime_controller_on_training_finished_persists_and_applies_latest_artifacts():
