@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import random
+import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -167,6 +169,8 @@ class TrainingWorkflowService:
         saving_path = os.path.join(project_dir, "resnet_train")
         os.makedirs(saving_path, exist_ok=True)
         plan_class_names = resolved_class_names if resnet_data_path else selected_class_names
+        class_indices = None if resnet_data_path else selected_class_indices
+        self._write_classes_yaml(saving_path, plan_class_names, class_indices)
         return ResnetTrainingPlan(
             training_path=training_path,
             testing_path=testing_path,
@@ -174,6 +178,21 @@ class TrainingWorkflowService:
             project_dir=project_dir,
             class_names=plan_class_names,
         )
+
+    def _write_classes_yaml(
+        self,
+        output_dir: str,
+        class_names: list[str],
+        class_indices: list[int] | None = None,
+    ) -> None:
+        if not output_dir or not class_names:
+            return
+        payload = {"names": list(class_names), "nc": len(class_names)}
+        if class_indices and len(class_indices) == len(class_names):
+            payload["indices"] = [int(index) for index in class_indices]
+        classes_path = Path(output_dir) / "classes.yaml"
+        with classes_path.open("w", encoding="utf-8") as handle:
+            yaml.safe_dump(payload, handle, allow_unicode=True, sort_keys=False)
 
     def _resolve_selected_class_names(
         self,
@@ -277,9 +296,53 @@ class TrainingWorkflowService:
 
         log(f"已裁剪 {summary.crop_count} 个标注区域")
         log(f"分类裁剪类别统计：{summary.class_counts}")
-        log("分类训练直接使用裁剪结果目录，不再额外导出 train/test 中间目录")
-        crop_path = crop_dir + os.sep
-        return crop_path, crop_path
+        split_root = os.path.join(project_dir, "resnet_train_split")
+        train_dir, val_dir = self._split_resnet_crop_dataset(crop_dir, split_root, log)
+        return train_dir + os.sep, val_dir + os.sep
+
+    def _split_resnet_crop_dataset(self, crop_dir: str, split_root: str, log) -> tuple[str, str]:
+        if os.path.exists(split_root):
+            shutil.rmtree(split_root)
+        train_dir = os.path.join(split_root, "train")
+        val_dir = os.path.join(split_root, "val")
+        os.makedirs(train_dir, exist_ok=True)
+        os.makedirs(val_dir, exist_ok=True)
+
+        rng = random.Random(20260630)
+        for class_name in sorted(os.listdir(crop_dir)):
+            class_dir = os.path.join(crop_dir, class_name)
+            if not os.path.isdir(class_dir):
+                continue
+            images = [
+                name
+                for name in sorted(os.listdir(class_dir))
+                if os.path.isfile(os.path.join(class_dir, name))
+            ]
+            rng.shuffle(images)
+            duplicate_singleton = len(images) == 1
+            if len(images) <= 1:
+                val_names = images
+            else:
+                val_count = max(1, int(round(len(images) * 0.2)))
+                val_count = min(val_count, len(images) - 1)
+                val_names = images[:val_count]
+            val_set = set(val_names)
+            for split_dir in (train_dir, val_dir):
+                os.makedirs(os.path.join(split_dir, class_name), exist_ok=True)
+            for image_name in images:
+                source = os.path.join(class_dir, image_name)
+                if duplicate_singleton:
+                    shutil.copy2(source, os.path.join(train_dir, class_name, image_name))
+                    shutil.copy2(source, os.path.join(val_dir, class_name, image_name))
+                    continue
+                target_root = val_dir if image_name in val_set else train_dir
+                shutil.copy2(source, os.path.join(target_root, class_name, image_name))
+            if not images:
+                log(f"类别 {class_name} 没有裁剪样本，已保留空目录")
+
+        log(f"分类训练集目录：{train_dir}")
+        log(f"分类验证集目录：{val_dir}")
+        return train_dir, val_dir
 
     def _list_resnet_classes(self, resnet_data_path: str) -> list[str]:
         class_names = []

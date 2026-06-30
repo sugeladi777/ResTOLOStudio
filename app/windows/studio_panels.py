@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
+    QHBoxLayout,
 )
 
 from app.windows.studio_shell import _create_collapsible_section, _wrap_tab_with_scroll
@@ -85,6 +86,26 @@ class StudioPanelsMixin:
         layout.addWidget(description_label)
         return panel
 
+    def _field_row(self, label_text: str, field: QWidget) -> QWidget:
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        label = self.create_label(label_text)
+        label.setMinimumWidth(92)
+        layout.addWidget(label)
+        layout.addWidget(field, 1)
+        return row
+
+    def _two_field_row(self, left_label: str, left_field: QWidget, right_label: str, right_field: QWidget) -> QWidget:
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        layout.addWidget(self._field_row(left_label, left_field), 1)
+        layout.addWidget(self._field_row(right_label, right_field), 1)
+        return row
+
     def _build_acquisition_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -123,7 +144,7 @@ class StudioPanelsMixin:
         self.session_list.setWordWrap(True)
         self.session_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.session_list.setTextElideMode(Qt.ElideNone)
-        self.session_list.setStyleSheet("font-size: 16px;")
+        self.session_list.setStyleSheet("font-size: 17px;")
 
         self.new_session_btn = self.create_button("新建会话", self.create_session)
         self.activate_session_btn = self.create_button("设为当前", self.activate_selected_session)
@@ -150,9 +171,9 @@ class StudioPanelsMixin:
         self.result_list.setWordWrap(True)
         self.result_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.result_list.setTextElideMode(Qt.ElideNone)
-        self.result_list.setStyleSheet("font-size: 16px;")
+        self.result_list.setStyleSheet("font-size: 17px;")
         self.result_detail_text = self._styled_readonly_text(min_height=144, max_height=220, placeholder="选择扫描结果后，这里会显示扫描参数、导出文件和来源信息。")
-        self.result_detail_text.setStyleSheet(self.result_detail_text.styleSheet() + "QTextEdit { font-size: 15px; line-height: 1.45; }")
+        self.result_detail_text.setStyleSheet(self.result_detail_text.styleSheet() + "QTextEdit { font-size: 16px; line-height: 1.5; }")
         self.result_preview_label = self._preview_label("尚未选择结果", minimum_height=220)
         self.result_preview_caption = self._preview_caption("选择扫描结果后，这里会显示预览图。")
         self.result_compare_combo = QComboBox()
@@ -196,21 +217,12 @@ class StudioPanelsMixin:
         group = self.create_group("设备连接")
         layout = group.layout()
 
-        form = QGridLayout()
-        form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(6)
         self.nano_ip_edit = self.create_line_edit("127.0.0.1")
         self.nano_ip_edit.setText("127.0.0.1")
         self.nano_port_edit = self.create_line_edit("6501")
         self.nano_port_edit.setText("6501")
         self.nano_version_edit = self.create_line_edit("10380")
         self.nano_version_edit.setText("10380")
-        form.addWidget(self.create_label("IP"), 0, 0)
-        form.addWidget(self.nano_ip_edit, 0, 1)
-        form.addWidget(self.create_label("端口"), 0, 2)
-        form.addWidget(self.nano_port_edit, 0, 3)
-        form.addWidget(self.create_label("版本"), 1, 0)
-        form.addWidget(self.nano_version_edit, 1, 1)
 
         button_grid = QGridLayout()
         button_grid.setHorizontalSpacing(6)
@@ -220,7 +232,8 @@ class StudioPanelsMixin:
         button_grid.addWidget(self.create_button("刷新状态", self.refresh_nanonis_status), 0, 2)
 
         self.nano_status_text = self._styled_readonly_text(min_height=60, max_height=80, placeholder="连接后，这里会显示设备状态与最新反馈。")
-        layout.addLayout(form)
+        layout.addWidget(self._two_field_row("IP", self.nano_ip_edit, "端口", self.nano_port_edit))
+        layout.addWidget(self._field_row("版本", self.nano_version_edit))
         layout.addLayout(button_grid)
         layout.addWidget(self.nano_status_text)
         return group
@@ -251,35 +264,25 @@ class StudioPanelsMixin:
             "点击“扫描并保存”后，会自动设置偏压、设定电流和扫描范围，然后开始扫描并把结果写入当前会话。",
         )
 
-        primary_grid = QGridLayout()
-        primary_grid.setHorizontalSpacing(8)
-        primary_grid.setVerticalSpacing(6)
-        primary_grid.addWidget(self.create_label("会话标签"), 0, 0)
-        primary_grid.addWidget(self.scan_label_edit, 0, 1, 1, 3)
-        primary_grid.addWidget(self.create_label("偏压 (V)"), 1, 0)
-        primary_grid.addWidget(self.scan_bias_edit, 1, 1)
-        primary_grid.addWidget(self.create_label("设定电流 (A)"), 1, 2)
-        primary_grid.addWidget(self.scan_setpoint_edit, 1, 3)
-        primary_grid.addWidget(self.create_label("通道"), 2, 0)
-        primary_grid.addWidget(self.scan_channels_edit, 2, 1, 1, 3)
+        primary_panel = QWidget()
+        primary_layout = QVBoxLayout(primary_panel)
+        primary_layout.setContentsMargins(0, 0, 0, 0)
+        primary_layout.setSpacing(6)
+        primary_layout.addWidget(self._field_row("会话标签", self.scan_label_edit))
+        primary_layout.addWidget(self._two_field_row("偏压 (V)", self.scan_bias_edit, "电流 (A)", self.scan_setpoint_edit))
+        primary_layout.addWidget(self._field_row("通道", self.scan_channels_edit))
 
-        geometry_grid = QGridLayout()
-        geometry_grid.setHorizontalSpacing(8)
-        geometry_grid.setVerticalSpacing(6)
-        geometry_grid.addWidget(self.create_label("宽度 (nm)"), 0, 0)
-        geometry_grid.addWidget(self.scan_width_edit, 0, 1)
-        geometry_grid.addWidget(self.create_label("高度 (nm)"), 0, 2)
-        geometry_grid.addWidget(self.scan_height_edit, 0, 3)
-        geometry_grid.addWidget(self.create_label("中心 X (nm)"), 1, 0)
-        geometry_grid.addWidget(self.scan_center_x_edit, 1, 1)
-        geometry_grid.addWidget(self.create_label("中心 Y (nm)"), 1, 2)
-        geometry_grid.addWidget(self.scan_center_y_edit, 1, 3)
-        geometry_grid.addWidget(self.create_label("像素"), 2, 0)
-        geometry_grid.addWidget(self.scan_pixels_edit, 2, 1)
-        geometry_grid.addWidget(self.create_label("角度 (deg)"), 2, 2)
+        geometry_panel = QWidget()
+        geometry_layout = QVBoxLayout(geometry_panel)
+        geometry_layout.setContentsMargins(0, 0, 0, 0)
+        geometry_layout.setSpacing(6)
+        geometry_layout.addWidget(self._two_field_row("宽度 (nm)", self.scan_width_edit, "高度 (nm)", self.scan_height_edit))
+        geometry_layout.addWidget(self._two_field_row("中心 X", self.scan_center_x_edit, "中心 Y", self.scan_center_y_edit))
+        geometry_layout.addWidget(self._field_row("像素", self.scan_pixels_edit))
         self.scan_angle_hint = QLabel("自动沿用当前设备角度")
+        self.scan_angle_hint.setWordWrap(True)
         self.scan_angle_hint.setStyleSheet(f"color: {MUTED_COLOR};")
-        geometry_grid.addWidget(self.scan_angle_hint, 2, 3)
+        geometry_layout.addWidget(self.scan_angle_hint)
 
         action_row = QGridLayout()
         action_row.setHorizontalSpacing(6)
@@ -288,8 +291,8 @@ class StudioPanelsMixin:
         action_row.addWidget(self.create_button("执行预扫-脉冲-后扫", self.run_scan_pulse_scan_workflow), 0, 1)
 
         layout.addWidget(summary_banner)
-        layout.addLayout(primary_grid)
-        layout.addWidget(_create_collapsible_section("几何参数", self._panel_from_layout(geometry_grid), expanded=True))
+        layout.addWidget(primary_panel)
+        layout.addWidget(_create_collapsible_section("几何参数", geometry_panel, expanded=True))
         layout.addLayout(action_row)
         return group
 

@@ -24,6 +24,16 @@ from tools.zeigen import class_name_getter
 import gc
 print(torch.cuda.device_count())
 
+
+def _saved_class_id(predicted_index, predicted_class_name, class_indices=None):
+    if class_indices and int(predicted_index) < len(class_indices):
+        return int(class_indices[int(predicted_index)])
+    try:
+        return int(predicted_class_name)
+    except (TypeError, ValueError):
+        return int(predicted_index)
+
+
 #-------------------------------------------------------------------
 def detect(save_img=False):
     #原神，启动！
@@ -56,7 +66,7 @@ def detect(save_img=False):
     
     # 加载resnet模型和权重
     # 先加载权重文件以确定模型类型
-    resnet_weights = torch.load(opt.resnet_dir+opt.resnet_name, weights_only=False)
+    resnet_weights = torch.load(opt.resnet_dir+opt.resnet_name, map_location=device, weights_only=False)
     
     # 检查权重文件格式
     if 'model_state_dict' in resnet_weights:
@@ -137,6 +147,7 @@ def detect(save_img=False):
     # 尝试加载类别信息 YAML 文件
     import os
     class_type = []
+    class_indices = []
     class_num = 0
     use_yaml = opt.classes_yaml and os.path.exists(opt.classes_yaml)
     
@@ -146,8 +157,11 @@ def detect(save_img=False):
             with open(opt.classes_yaml, 'r', encoding='utf-8') as f:
                 classes_info = yaml.safe_load(f)
             if 'names' in classes_info:
-                class_type = classes_info['names']
+                class_type = [str(name) for name in classes_info['names']]
                 class_num = len(class_type)
+                indices = classes_info.get('indices')
+                if isinstance(indices, list) and len(indices) == class_num:
+                    class_indices = [int(index) for index in indices]
                 print(f"从 YAML 文件加载类别信息成功")
                 print(f"类别数: {class_num}")
                 print(f"类别名称: {class_type}")
@@ -166,7 +180,7 @@ def detect(save_img=False):
     num_ftrs = resnet_model.fc.in_features
     resnet_model.fc = torch.nn.Linear(num_ftrs, class_num)
     resnet_model.load_state_dict(state_dict)
-    resnet_model.to(opt.device)
+    resnet_model.to(device)
     resnet_model.eval()
     
     if half:
@@ -233,7 +247,7 @@ def detect(save_img=False):
             #免得其他框有影响
             im1=cp.deepcopy(im0) 
             im_grand=np.zeros((3*im1.shape[0],3*im1.shape[1],im1.shape[2]))
-            im_grand[im1.shape[0]:2*im1.shape[0],im1.shape[1]:2*im1.shape[0],:]=im1
+            im_grand[im1.shape[0]:2*im1.shape[0],im1.shape[1]:2*im1.shape[1],:]=im1
             #转换颜色信道，发文章用
             im0=cv2.cvtColor(im1, cv2.COLOR_BGR2RGB)
             Chiffres=np.zeros(class_num) #存储各个图片的种类
@@ -337,7 +351,7 @@ def detect(save_img=False):
                             Finalemente=np.clip(subplot-SUM/twee_HE,0,255)
                             subplot=cv2.resize(np.uint8(Finalemente),target_size,interpolation=cv2.INTER_CUBIC) #变成标准大小
                             subplot=torch.tensor(subplot)
-                            subplot=subplot.to(torch.float32).to(opt.device)
+                            subplot=subplot.to(torch.float32).to(device)
                             subplot=subplot.permute((2,0,1))
                             #------------------------------------------------------------
                             #----------------------CNN模块---------
@@ -359,22 +373,25 @@ def detect(save_img=False):
                             
                             #计算
                             max_values,max_indices=torch.max(resultat1,dim=1,keepdim=True)
-                            label=class_type[max_indices]
+                            predicted_index = int(max_indices.item())
+                            predicted_class_name = str(class_type[predicted_index])
+                            label=predicted_class_name
                             _=', p=%.3f'%max_values#+',x='+str(x)
                             label+=_
-                            Chiffres[max_indices]+=1
+                            Chiffres[predicted_index]+=1
                             
                             # 输出
-                            print(f"{index}/{total_boxes} ,type:{class_type[max_indices]} {_}")
+                            print(f"{index}/{total_boxes} ,type:{predicted_class_name} {_}")
                             
                             #label = f'{names[int(cls)]} {conf:.2f}' #int(cls)
-                            plot_one_box(xyxy, im0, label=label, color=colors[max_indices], line_thickness=3)
+                            plot_one_box(xyxy, im0, label=label, color=colors[predicted_index], line_thickness=3)
                             
                             # 保存到txt文件（使用ResNet分类后的类别）
                             if save_txt:
                                 xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                                 # 使用ResNet分类后的类别（max_indices）
-                                line = (int(max_indices), *xywh, float(max_values)) if opt.save_conf else (int(max_indices), *xywh)  # label format
+                                saved_class_id = _saved_class_id(predicted_index, predicted_class_name, class_indices)
+                                line = (saved_class_id, *xywh, float(max_values)) if opt.save_conf else (saved_class_id, *xywh)
                                 with open(txt_path + '.txt', 'a') as f:
                                     f.write(('%g ' * len(line)).rstrip() % line + '\n')
                             #--------------------------------------------

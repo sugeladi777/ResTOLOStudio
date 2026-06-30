@@ -110,9 +110,16 @@ def test_training_workflow_service_prepares_resnet_plan_from_annotations(tmp_pat
     assert plan.class_names == ["atom"]
     assert plan.saving_path.endswith("resnet_train")
     assert Path(plan.saving_path).exists()
+    classes_yaml = Path(plan.saving_path) / "classes.yaml"
+    assert classes_yaml.exists()
+    assert "atom" in classes_yaml.read_text(encoding="utf-8")
+    assert "indices" in classes_yaml.read_text(encoding="utf-8")
     assert any("已裁剪" in message for message in logs)
-    assert plan.training_path == plan.testing_path
-    assert plan.training_path.endswith("resnet_crop\\")
+    assert plan.training_path != plan.testing_path
+    assert plan.training_path.endswith("resnet_train_split\\train\\")
+    assert plan.testing_path.endswith("resnet_train_split\\val\\")
+    assert (project_dir / "resnet_train_split" / "train" / "atom").exists()
+    assert (project_dir / "resnet_train_split" / "val" / "atom").exists()
 
 
 def test_training_workflow_service_resnet_ignores_classes_yaml_when_annotation_selection_exists(tmp_path: Path):
@@ -216,3 +223,7 @@ def test_training_workflow_service_resnet_uses_selected_annotation_classes(tmp_p
     crop_dir = project_dir / "resnet_crop"
     assert (crop_dir / "vacancy").exists()
     assert not (crop_dir / "atom").exists()
+    classes_yaml = Path(plan.saving_path) / "classes.yaml"
+    assert classes_yaml.exists()
+    assert "vacancy" in classes_yaml.read_text(encoding="utf-8")
+    assert "indices" in classes_yaml.read_text(encoding="utf-8")

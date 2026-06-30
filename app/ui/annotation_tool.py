@@ -27,17 +27,17 @@ except ImportError:  # pragma: no cover - optional dependency in lightweight tes
     cv2 = None
 
 
-BASE_COLOR = "#8A939B"
-HIGHLIGHT_COLOR = "#D6DBDF"
-MUTED_COLOR = "#A7AFB6"
-ACCENT_COLOR = "#B2B9BF"
-DEEP_SHADE_COLOR = "#50565C"
+BASE_COLOR = "#5AE54A"
+HIGHLIGHT_COLOR = "#D3FF9E"
+MUTED_COLOR = "#B0FC97"
+ACCENT_COLOR = "#9CF96D"
+DEEP_SHADE_COLOR = "#008400"
 DARK_BG = "#181818"
 PANEL_BG = "#232323"
 TEXT_COLOR = "#E8E8E8"
 BORDER_COLOR = "#3A3A3A"
-SELECTED_BG = "#5E768A"
-SELECTED_BORDER = "#7E98AE"
+SELECTED_BG = PANEL_BG
+SELECTED_BORDER = BASE_COLOR
 
 
 def _debug(message: str) -> None:
@@ -104,8 +104,8 @@ class AnnotationTool(QWidget):
                 border-radius: 3px;
                 padding: {self._scaled_int(8, scale)}px {self._scaled_int(14, scale)}px;
                 font-weight: normal;
-                font-size: {self._scaled_int(14, scale)}px;
-                min-height: {self._scaled_int(38, scale)}px;
+                font-size: {self._scaled_int(17, scale)}px;
+                min-height: {self._scaled_int(48, scale)}px;
             }}
             QPushButton:hover {{
                 background-color: #2F2F2F;
@@ -124,13 +124,13 @@ class AnnotationTool(QWidget):
             }}
             QPushButton:checked {{
                 background-color: {SELECTED_BG};
-                color: #F5F7F8;
+                color: {TEXT_COLOR};
                 border: 2px solid {SELECTED_BORDER};
             }}
             QLabel {{
                 color: {TEXT_COLOR};
                 background-color: transparent;
-                font-size: {self._scaled_int(14, scale)}px;
+                font-size: {self._scaled_int(17, scale)}px;
             }}
             QScrollArea {{
                 border: 1px solid {BORDER_COLOR};
@@ -144,8 +144,8 @@ class AnnotationTool(QWidget):
         self.control_layout = QHBoxLayout()
         self.control_layout.setSpacing(6)
 
-        self.prev_btn = QPushButton("上一张")
-        self.next_btn = QPushButton("下一张")
+        self.prev_btn = QPushButton("← 上一张")
+        self.next_btn = QPushButton("下一张 →")
         self.clear_btn = QPushButton("清空标注")
         self.delete_btn = QPushButton("删除选中")
         self.reset_view_btn = QPushButton("重置视图")
@@ -160,7 +160,7 @@ class AnnotationTool(QWidget):
         self.reset_view_action = more_menu.addAction("重置视图")
         self.more_btn.setMenu(more_menu)
 
-        for button in (self.prev_btn, self.next_btn):
+        for button in (self.prev_btn, self.next_btn, self.clear_btn, self.delete_btn, self.reset_view_btn):
             button.setCursor(Qt.PointingHandCursor)
             button.setAutoDefault(False)
             button.setDefault(False)
@@ -169,6 +169,7 @@ class AnnotationTool(QWidget):
 
         self.more_btn.setFocusPolicy(Qt.NoFocus)
         self.control_layout.addWidget(self.more_btn)
+        self.more_btn.hide()
         self.control_layout.addStretch()
         layout.addLayout(self.control_layout)
 
@@ -178,7 +179,7 @@ class AnnotationTool(QWidget):
         self.class_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.class_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scale = self._ui_scale_factor()
-        self.class_scroll_area.setMinimumHeight(self._scaled_int(74, scale))
+        self.class_scroll_area.setMinimumHeight(self._scaled_int(82, scale))
         self.class_scroll_area.setStyleSheet(
             f"""
             QScrollArea {{
@@ -204,8 +205,8 @@ class AnnotationTool(QWidget):
                 border-radius: 3px;
                 padding: {self._scaled_int(8, scale)}px {self._scaled_int(14, scale)}px;
                 font-weight: normal;
-                font-size: {self._scaled_int(14, scale)}px;
-                min-height: {self._scaled_int(38, scale)}px;
+                font-size: {self._scaled_int(17, scale)}px;
+                min-height: {self._scaled_int(48, scale)}px;
             }}
             QScrollArea QPushButton:hover {{
                 background-color: #2F2F2F;
@@ -224,7 +225,7 @@ class AnnotationTool(QWidget):
             }}
             QScrollArea QPushButton:checked {{
                 background-color: {SELECTED_BG};
-                color: #F5F7F8;
+                color: {TEXT_COLOR};
                 border: 2px solid {SELECTED_BORDER};
             }}
             """
@@ -236,8 +237,8 @@ class AnnotationTool(QWidget):
         self.class_layout.setSpacing(6)
         self.class_layout.setContentsMargins(6, 6, 6, 6)
 
-        class_label = QLabel("类别")
-        class_label.setStyleSheet(f"color: {HIGHLIGHT_COLOR}; font-weight: normal;")
+        class_label = QLabel("选择类别:")
+        class_label.setStyleSheet(f"color: {HIGHLIGHT_COLOR}; font-weight: bold;")
         self.class_layout.addWidget(class_label)
 
         self.class_buttons: list[QPushButton] = []
@@ -284,11 +285,32 @@ class AnnotationTool(QWidget):
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setScaledContents(False)
-        self.image_label.setStyleSheet(f"background-color: {DARK_BG}; border: none;")
+        self.image_label.setMinimumSize(640, 420)
+        self.image_label.setWordWrap(True)
         self.image_label.setMouseTracking(True)
+        self._show_empty_placeholder("未加载图片\n\n请在左侧选择采集结果、加载图像，或切换到标注/应用页面开始处理。")
 
         self.scroll_area.setWidget(self.image_label)
         layout.addWidget(self.scroll_area, 1)
+
+    def _show_empty_placeholder(self, message: str) -> None:
+        self.image_label.clear()
+        self.image_label.setStyleSheet(
+            f"""
+            QLabel {{
+                background-color: {DARK_BG};
+                border: 1px dashed {BORDER_COLOR};
+                border-radius: 4px;
+                color: {MUTED_COLOR};
+                padding: 28px;
+                font-size: 20px;
+            }}
+            """
+        )
+        self.image_label.setText(message)
+
+    def _apply_image_canvas_style(self) -> None:
+        self.image_label.setStyleSheet(f"background-color: {DARK_BG}; border: none; padding: 0px;")
 
     def _build_status_bar(self, layout: QVBoxLayout) -> None:
         self.status_label = QLabel("就绪")
@@ -300,7 +322,7 @@ class AnnotationTool(QWidget):
                 padding: {self._scaled_int(8, scale)}px {self._scaled_int(10, scale)}px;
                 background-color: {PANEL_BG};
                 border-radius: 3px;
-                font-size: {self._scaled_int(14, scale)}px;
+                font-size: {self._scaled_int(17, scale)}px;
             }}
             """
         )
@@ -311,7 +333,7 @@ class AnnotationTool(QWidget):
         self.apply_responsive_styles()
         if hasattr(self, "class_scroll_area"):
             scale = self._ui_scale_factor()
-            self.class_scroll_area.setMinimumHeight(self._scaled_int(74, scale))
+            self.class_scroll_area.setMinimumHeight(self._scaled_int(82, scale))
 
     def _initialize_state(self) -> None:
         self.images: list[str] = []
@@ -364,7 +386,7 @@ class AnnotationTool(QWidget):
             self.show_current_image()
         else:
             self.current_image = None
-            self.image_label.clear()
+            self._show_empty_placeholder("未加载图片\n\n请在左侧加载图像或选择已有扫描结果。")
             self.status_label.setText("未加载图片")
 
     def export_state(self) -> AnnotationState:
@@ -588,20 +610,20 @@ class AnnotationTool(QWidget):
     def show_current_image(self) -> None:
         if not self.images:
             self.current_image = None
-            self.image_label.clear()
+            self._show_empty_placeholder("未加载图片\n\n请在左侧加载图像或选择已有扫描结果。")
             self.status_label.setText("未加载图片")
             return
 
         image_path = self.images[self.current_index]
         if not os.path.exists(image_path):
             self.current_image = None
-            self.image_label.clear()
+            self._show_empty_placeholder(f"图片不存在\n\n{os.path.basename(image_path)}")
             self.status_label.setText(f"图片不存在: {os.path.basename(image_path)}")
             return
 
         self.current_image = self._load_image_array(image_path)
         if self.current_image is None:
-            self.image_label.clear()
+            self._show_empty_placeholder(f"无法读取图片\n\n{os.path.basename(image_path)}")
             self.status_label.setText(f"无法读取图片: {os.path.basename(image_path)}")
             return
 
@@ -644,6 +666,7 @@ class AnnotationTool(QWidget):
             final_height = base_height
 
         final_pixmap = pixmap.scaled(final_width, final_height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+        self._apply_image_canvas_style()
         self.image_label.setPixmap(final_pixmap)
         self.image_label.resize(final_width, final_height)
 
@@ -969,9 +992,11 @@ class AnnotationTool(QWidget):
 
     def set_annotation_mode(self, enabled: bool) -> None:
         self.annotation_mode = enabled
-        if hasattr(self, "more_btn"):
-            self.more_btn.setVisible(enabled)
+        self.clear_btn.setVisible(enabled)
+        self.delete_btn.setVisible(enabled)
         self.class_scroll_area.setVisible(enabled)
+        if hasattr(self, "more_btn"):
+            self.more_btn.setVisible(False)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded if enabled else Qt.ScrollBarAlwaysOff)
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if enabled else Qt.ScrollBarAlwaysOff)
         if not enabled:

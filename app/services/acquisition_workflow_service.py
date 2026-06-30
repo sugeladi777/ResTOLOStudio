@@ -48,9 +48,16 @@ class AcquisitionWorkflowService:
         height_nm: str,
         center_x_nm: str,
         center_y_nm: str,
-        pixels: str,
-        channels: str,
+        pixels: str | None = None,
+        channels: str | None = None,
     ) -> ScanGeometry:
+        if pixels is None and channels is None:
+            pixels = center_x_nm
+            channels = center_y_nm
+            center_x_nm = "0"
+            center_y_nm = "0"
+        if pixels is None or channels is None:
+            raise ValueError("扫描像素和通道不能为空")
         return ScanGeometry(
             width_nm=float(width_nm.strip()),
             height_nm=float(height_nm.strip()),

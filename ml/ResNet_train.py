@@ -327,7 +327,11 @@ def fortifier(mother_trace):
 
 #类读取器：读取所有的类名称,母文件夹路径要带/
 def class_name_getter(mother_trace):
-    class_name_list=os.listdir(mother_trace)
+    class_name_list=[
+        name
+        for name in sorted(os.listdir(mother_trace))
+        if os.path.isdir(os.path.join(mother_trace, name))
+    ]
     
     #打印每个数对应的类别名，方便查看和debug
     print("类别名获取完毕,按顺序分别为：")
@@ -355,7 +359,11 @@ class MyDataset(Dataset):
 #-------------------------训练集均值和方差的计算-----------------------
 #一定要清洗完毕的数据集才可以使用！
 def normalizer(mother_trace):
-    type_list=os.listdir(mother_trace)            #文件名列表
+    type_list=[
+        name
+        for name in sorted(os.listdir(mother_trace))
+        if os.path.isdir(os.path.join(mother_trace, name))
+    ]            #文件名列表
     
     # 统计总图片数
     total_images = 0
@@ -430,7 +438,11 @@ def train_data_devider(mother_trace,batch_size=64):
     data_target=[]
     
     #开始存储路径
-    type_list=os.listdir(mother_trace)            #文件名列表
+    type_list=[
+        name
+        for name in sorted(os.listdir(mother_trace))
+        if os.path.isdir(os.path.join(mother_trace, name))
+    ]            #文件名列表
     type_number=len(type_list)                    #这个函数是按首字母顺序排的，理论上不会出错
     
     # 创建类别名称到索引的映射
@@ -491,7 +503,11 @@ def test_data_devider(mother_trace):
     data_target=[]
     
     #开始存储路径
-    type_list=os.listdir(mother_trace)            #文件名列表
+    type_list=[
+        name
+        for name in sorted(os.listdir(mother_trace))
+        if os.path.isdir(os.path.join(mother_trace, name))
+    ]            #文件名列表
     type_number=len(type_list)                    #这个函数是按首字母顺序排的，理论上不会出错
     testing_sum=0
     
@@ -606,8 +622,8 @@ def training(training_path,testing_path,saving_path,net,pepper,avatar,Epochs=20,
                     "_" + str(time.localtime().tm_min) + \
                         "_" + str(time.localtime().tm_sec)
     
-    # 划分训练数据集，当前分类训练不再使用独立验证集
     train_dataset,train_dataloader=train_data_devider(training_path,batch_size=batch_size)
+    test_dataset,test_dataloader=test_data_devider(testing_path)
     
     # 打印设备信息
     print(f"\n=== 训练配置 ===")
@@ -620,7 +636,7 @@ def training(training_path,testing_path,saving_path,net,pepper,avatar,Epochs=20,
     print(f"学习率: {lr}")
     print(f"批次大小: {batch_size}")
     print(f"训练数据集大小: {len(train_dataset)}")
-    print("验证集: 不使用")
+    print(f"验证数据集大小: {len(test_dataset)}")
     print(f"================\n")
     
     #预装载
@@ -628,7 +644,6 @@ def training(training_path,testing_path,saving_path,net,pepper,avatar,Epochs=20,
     net.train()
     print(f"模型已加载到 {device} 设备")
     
-    # 开始训练，预定义辅助量
     step = 0
     Steps = []
     Loss_Steps = []
@@ -647,6 +662,11 @@ def training(training_path,testing_path,saving_path,net,pepper,avatar,Epochs=20,
         amsgrad=True,
     )
 
+    validation_batches = list(test_dataloader)
+    if not validation_batches:
+        raise ValueError("验证数据集为空！")
+    epreuve, epreuve_t = validation_batches[0]
+
     print("开始进入训练主循环")
 
     for epoch in range(Epochs):
@@ -658,6 +678,8 @@ def training(training_path,testing_path,saving_path,net,pepper,avatar,Epochs=20,
 
         for i, (batch, target) in enumerate(train_dataloader):
             net.train()
+            gc.collect()
+            torch.cuda.empty_cache()
 
             epice=np.random.uniform(0,0.1,1)[0]*int(pepper)
             data=path2image(batch,pepper=epice,avatar=avatar)
@@ -684,13 +706,28 @@ def training(training_path,testing_path,saving_path,net,pepper,avatar,Epochs=20,
             Steps.append(step)
             step += 1
 
+        if Nan:
+            break
         if not epoch_losses:
             print(f"Epoch {epoch+1} 没有有效训练步，提前结束")
             break
 
         avg_train_loss = float(np.mean(epoch_losses))
-        # 保持旧日志格式兼容 UI 解析，但这里不再代表独立验证误差
-        err = avg_train_loss
+        val_batch=cp.deepcopy(epreuve)
+        val_target=cp.deepcopy(epreuve_t)
+        val_data=path2image(val_batch,pepper=0)
+        val_data=(val_data-127.5)/127.5
+        val_data=val_data.float()
+        val_data=val_data.to(device)
+        val_target=val_target.to(device)
+
+        net.eval()
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        prediction = net(val_data)
+        err = loss_func(prediction,val_target).float()
+        err = float(err.detach().cpu().numpy())
         log_message = (
             f"Training Loss: {np.log10(avg_train_loss):.8f} \t "
             f"Training Steps: {len(epoch_losses)} \t "
@@ -711,17 +748,18 @@ def training(training_path,testing_path,saving_path,net,pepper,avatar,Epochs=20,
             )
             f.write("Prediction Error:"+"%.8f"%np.log10(err)+"\t Epoch"+str(epoch+1)+"\n")
 
+        ckpt={
+            'epoch': epoch,
+            'model_state_dict': net.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': avg_train_loss,
+            'val_loss': err,
+        }
+        if old_err >= err:
+            torch.save(ckpt,saving_path+"Model_best_"+current_time+".saving")
+            old_err=err
         if epoch % 20 == 0 or epoch == Epochs - 1:
-            ckpt={
-                'epoch': epoch,
-                'model_state_dict': net.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': avg_train_loss,
-            }
             torch.save(ckpt,saving_path+"Model_"+current_time+".saving")
-            if old_err >= avg_train_loss:
-                torch.save(ckpt,saving_path+"Model_best_"+current_time+".saving")
-                old_err=avg_train_loss
 
         Count_Epochs.append(epoch)
         Loss_Epochs.append(avg_train_loss)

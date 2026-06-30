@@ -209,7 +209,21 @@ class AnnotationService:
                 names = [name for _, name in sorted(names.items(), key=lambda item: int(item[0]))]
             if not isinstance(names, list):
                 return None
-            return [str(name) for name in names]
+            class_names = [str(name) for name in names]
+            indices = payload.get("indices")
+            if not isinstance(indices, list):
+                return class_names
+
+            indexed_names: list[str] = []
+            for raw_index, name in zip(indices, class_names):
+                try:
+                    index = int(raw_index)
+                except (TypeError, ValueError):
+                    return class_names
+                while len(indexed_names) <= index:
+                    indexed_names.append(str(len(indexed_names)))
+                indexed_names[index] = name
+            return indexed_names
         except Exception:  # noqa: BLE001
             return None
 
@@ -220,7 +234,7 @@ class AnnotationService:
             for cls in used_classes
         ]
         classes_path = output_dir / "classes.yaml"
-        payload = {"names": used_class_names, "nc": len(used_class_names)}
+        payload = {"names": used_class_names, "indices": used_classes, "nc": len(used_class_names)}
         with classes_path.open("w", encoding="utf-8") as handle:
             yaml.dump(payload, handle, default_flow_style=False, allow_unicode=True)
         return classes_path, used_class_names

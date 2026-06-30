@@ -61,8 +61,8 @@ def test_file_pipeline_annotation_round_trip_and_dataset_outputs(tmp_path: Path)
         str(images_dir),
         str(labels_dir),
     )
-    assert (images_dir / "sample.png").exists()
-    assert (labels_dir / "sample.txt").read_text(encoding="utf-8").strip() == "0 0.5 0.5 0.4 0.4"
+    assert (images_dir / "img_0000.png").exists()
+    assert (labels_dir / "img_0000.txt").read_text(encoding="utf-8").strip() == "0 0.5 0.5 0.4 0.4"
 
     crop_summary = dataset_service.crop_resnet_dataset(
         loaded_state,
@@ -83,6 +83,32 @@ def test_file_pipeline_annotation_round_trip_and_dataset_outputs(tmp_path: Path)
     restored_image_path = restored_state.images[0]
     assert Path(restored_image_path).parent == saved_dir
     assert restored_state.annotations[restored_image_path][0].to_tuple() == (0, 0.5, 0.5, 0.4, 0.4)
+
+
+def test_annotation_classes_yaml_preserves_sparse_class_indices(tmp_path: Path):
+    image_path = _make_image(tmp_path / "sample.png")
+    annotation_service = AnnotationService()
+    state = AnnotationState(
+        images=[image_path],
+        annotations={
+            image_path: [
+                AnnotationBox(cls=1, x=0.5, y=0.5, w=0.4, h=0.4),
+            ]
+        },
+        class_names=["background", "atom"],
+        current_index=0,
+    )
+
+    saved_dir = tmp_path / "saved"
+    output_dir, used_class_names = annotation_service.save_annotations(state, str(saved_dir))
+    restored_state = annotation_service.load_saved_annotation_state(str(saved_dir))
+
+    assert output_dir == saved_dir
+    assert used_class_names == ["atom"]
+    assert restored_state is not None
+    assert restored_state.class_names == ["0", "atom"]
+    restored_image_path = restored_state.images[0]
+    assert restored_state.annotations[restored_image_path][0].cls == 1
 
 
 def test_crop_resnet_dataset_clears_old_output_and_keeps_per_class_counts(tmp_path: Path):
@@ -174,4 +200,4 @@ def test_write_yolo_split_remaps_sparse_class_ids(tmp_path: Path):
 
     assert class_index_map == {1: 0}
     assert class_names == ["atom"]
-    assert (labels_dir / "sample.txt").read_text(encoding="utf-8").strip() == "0 0.5 0.5 0.4 0.4"
+    assert (labels_dir / "img_0000.txt").read_text(encoding="utf-8").strip() == "0 0.5 0.5 0.4 0.4"

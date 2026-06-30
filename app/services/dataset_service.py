@@ -145,9 +145,12 @@ class DatasetService:
         os.makedirs(images_dir, exist_ok=True)
         os.makedirs(labels_dir, exist_ok=True)
 
-        for image_path in image_paths:
-            shutil.copy(gray_path_resolver(image_path), images_dir)
-            base_name = os.path.splitext(os.path.basename(image_path))[0]
+        for index, image_path in enumerate(image_paths):
+            source_path = gray_path_resolver(image_path)
+            extension = os.path.splitext(source_path)[1] or ".png"
+            base_name = f"img_{index:04d}"
+            target_image_path = os.path.join(images_dir, f"{base_name}{extension}")
+            shutil.copy(source_path, target_image_path)
             label_path = os.path.join(labels_dir, f"{base_name}.txt")
             with open(label_path, "w", encoding="utf-8") as handle:
                 for box in state.annotations[image_path]:
@@ -173,6 +176,7 @@ class DatasetService:
                 for idx, name in enumerate(summary.class_names)
                 if idx in summary.used_classes
             }
+        selected_class_map = dict(sorted(selected_class_map.items(), key=lambda item: int(item[0])))
         os.makedirs(output_dir, exist_ok=True)
         self._clear_resnet_crop_output(output_dir)
         for class_name in selected_class_map.values():

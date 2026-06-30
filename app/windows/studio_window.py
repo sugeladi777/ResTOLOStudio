@@ -107,10 +107,12 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
         tab_widget = getattr(self, "tab_widget", None)
         if tab_widget is None:
             return
-        labels = ["采集", "标注", "训练", "推理", "结果"]
+        labels = ["采集", "标注", "训练", "应用", "结果"]
+        tooltips = ["采集工作台", "标注模式", "训练模式", "应用模式", "结果复查"]
         for index, label in enumerate(labels):
             if tab_widget.count() > index:
                 tab_widget.setTabText(index, label)
+                tab_widget.setTabToolTip(index, tooltips[index])
 
     def _call_runtime_controller(self, method_name: str, *args):
         controller = getattr(self, "runtime_controller", None)
@@ -133,9 +135,9 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
     def _recommended_left_panel_width(self) -> int:
         left_widget = getattr(self, "left_panel_widget", None)
         if left_widget is None:
-            return 560
+            return 540
 
-        preferred_width = max(560, left_widget.sizeHint().width(), left_widget.minimumSizeHint().width())
+        preferred_width = max(540, left_widget.sizeHint().width(), left_widget.minimumSizeHint().width())
         tab_widget = getattr(self, "tab_widget", None)
         tab_bar = tab_widget.tabBar() if tab_widget is not None and hasattr(tab_widget, "tabBar") else None
         if isinstance(tab_bar, QTabBar):

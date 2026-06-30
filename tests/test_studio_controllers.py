@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QWidget
 
 from app.core import AnnotationState
 from app.ui.annotation_tool import AnnotationTool
@@ -15,9 +15,13 @@ from app.windows.studio_controller import StudioController
 class DummyButton:
     def __init__(self) -> None:
         self.enabled = None
+        self.tooltip = ""
 
     def setEnabled(self, value: bool) -> None:
         self.enabled = value
+
+    def setToolTip(self, value: str) -> None:
+        self.tooltip = value
 
 
 class DummyLineEdit:
@@ -491,9 +495,12 @@ def test_studio_window_exposes_visible_status_sections(tmp_path: Path):
     app.processEvents()
 
     assert window.annotation_status_detail.text() == "尚未加载图像。"
-    assert window.training_dataset_status_detail.text() == "训练数据尚未准备好。"
+    assert window.training_dataset_status_detail.text() == "训练数据尚未准备好；请先加载图像，再加载或绘制标注。"
     assert window.inference_input_status_detail.text() == "尚未加载推理图像。"
     assert window.inference_result_status_detail.text() == "当前没有推理结果。"
+    assert not window.findChild(QWidget, "annotation_status_group").isHidden()
+    assert not window.findChild(QWidget, "training_status_group").isHidden()
+    assert not window.findChild(QWidget, "inference_status_group").isHidden()
 
 
 def test_studio_window_keeps_session_training_models_over_saved_recent_paths(tmp_path: Path):
@@ -921,6 +928,8 @@ def test_runtime_controller_update_button_states_and_tab_sync(tmp_path: Path):
         infer_load_yolo_model_btn=DummyButton(),
         infer_load_resnet_model_btn=DummyButton(),
         start_inference_btn=DummyButton(),
+        use_selected_result_btn=DummyButton(),
+        open_result_dir_btn=DummyButton(),
         workspace_mode_detail=DummyLineEdit(),
         workflow_focus_detail=DummyLineEdit(),
         operator_hint_detail=DummyLineEdit(),
@@ -1187,6 +1196,8 @@ def test_runtime_controller_disables_actions_when_inputs_missing():
         session_sort_combo=DummyComboBox(["最近活跃优先"]),
         result_compare_combo=DummyComboBox(["不进行对比"]),
         result_compare_summary_text=DummyTextBlock(),
+        use_selected_result_btn=DummyButton(),
+        open_result_dir_btn=DummyButton(),
         tab_widget=SimpleNamespace(currentIndex=lambda: 0),
         log=lambda message: None,
         current_session=SimpleNamespace(label="demo", id="session-1", scan_results=[], training_results=[], inference_results=[]),
@@ -1203,6 +1214,12 @@ def test_runtime_controller_disables_actions_when_inputs_missing():
     assert window.train_yolo_btn.enabled is False
     assert window.train_resnet_btn.enabled is False
     assert window.start_inference_btn.enabled is False
+    assert window.use_selected_result_btn.enabled is False
+    assert window.open_result_dir_btn.enabled is False
+    assert "请先加载图像" in window.load_annotations_btn.tooltip
+    assert "检测模型权重" in window.train_yolo_btn.tooltip
+    assert "推理图像" in window.start_inference_btn.tooltip
+    assert "选择一条扫描结果" in window.use_selected_result_btn.tooltip
 
 
 def test_log_slot_updates_log_snapshot_labels():

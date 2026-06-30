@@ -54,6 +54,44 @@ class StudioRuntimeController:
     def _inference_images(self) -> list[str]:
         return list(getattr(getattr(self.window, "inference_manager", None), "images", []) or [])
 
+    def _selected_scan_result(self):
+        selector = getattr(getattr(self.window, "studio", None), "_selected_scan_result", None)
+        if callable(selector):
+            return selector()
+
+        result_list = getattr(self.window, "result_list", None)
+        session = getattr(self.window, "current_session", None)
+        current_row = result_list.currentRow() if result_list is not None and hasattr(result_list, "currentRow") else -1
+        results = list(getattr(session, "scan_results", []) or [])
+        if 0 <= current_row < len(results):
+            return results[current_row]
+        return None
+
+    def _selected_session(self):
+        selector = getattr(getattr(self.window, "studio", None), "_selected_session", None)
+        if callable(selector):
+            return selector()
+        return getattr(self.window, "current_session", None)
+
+    def _has_selected_result(self) -> bool:
+        return self._selected_scan_result() is not None
+
+    def _has_selected_result_directory(self) -> bool:
+        result = self._selected_scan_result()
+        if result is None:
+            return False
+        directory = getattr(result, "directory", None) or getattr(result, "output_dir", None)
+        return bool(directory and os.path.isdir(directory))
+
+    def _set_button_state(self, attr_name: str, enabled: bool, tooltip: str = "") -> None:
+        button = getattr(self.window, attr_name, None)
+        if button is None:
+            return
+        if hasattr(button, "setEnabled"):
+            button.setEnabled(enabled)
+        if hasattr(button, "setToolTip"):
+            button.setToolTip("" if enabled else tooltip)
+
     def _used_annotation_classes(self, annotations) -> list[str]:
         used_classes: set[str] = set()
         for boxes in annotations.values():
@@ -70,7 +108,7 @@ class StudioRuntimeController:
             parts.append("检测模型已就绪")
         if self._has_resnet_model():
             parts.append("分类模型已就绪")
-        return "，".join(parts) if parts else "模型尚未加载。"
+        return "，".join(parts) if parts else "模型尚未加载；如已配置默认权重，启动后会自动填入路径。"
 
     def _training_dataset_status_text(self, image_count: int, annotation_count: int) -> str:
         train_data_path = getattr(self.window, "train_resnet_data_path", None)
@@ -79,7 +117,9 @@ class StudioRuntimeController:
             return f"训练数据已就绪：{image_count} 张图像，{annotation_count} 个标注。"
         if has_resnet_data:
             return "已加载外部分类型数据。"
-        return "训练数据尚未准备好。"
+        if image_count:
+            return "已加载图像；请继续加载或绘制标注。"
+        return "训练数据尚未准备好；请先加载图像，再加载或绘制标注。"
 
     def _training_run_status_text(self) -> str:
         return "训练任务进行中。" if getattr(self.window, "pending_training_context", None) is not None else "当前没有训练任务。"
@@ -301,24 +341,37 @@ class StudioRuntimeController:
             resnet_data_path = getattr(self.window, "train_resnet_data_path", None)
             has_resnet_data = bool(resnet_data_path and resnet_data_path.text().strip() and os.path.exists(resnet_data_path.text().strip()))
 
-            for attr_name, enabled in (
-                ("load_annotations_btn", has_images),
-                ("save_annotations_btn", has_annotations),
-                ("crop_resnet_dataset_btn", has_annotations),
-                ("train_load_images_btn", True),
-                ("train_load_annotations_btn", has_images),
-                ("train_load_yolo_model_btn", True),
-                ("train_load_resnet_model_btn", True),
-                ("train_yolo_btn", has_images and has_annotations and has_yolo_model),
-                ("train_resnet_btn", has_resnet_model and (has_resnet_data or (has_images and has_annotations))),
-                ("infer_load_images_btn", True),
-                ("infer_load_yolo_model_btn", True),
-                ("infer_load_resnet_model_btn", True),
-                ("start_inference_btn", has_infer_images and has_yolo_model and has_resnet_model),
-            ):
-                button = getattr(self.window, attr_name, None)
-                if button is not None and hasattr(button, "setEnabled"):
-                    button.setEnabled(enabled)
+            has_selected_result = self._has_selected_result()
+            has_selected_result_directory = self._has_selected_result_directory()
+
+            button_states = {
+                "load_annotations_btn": (has_images, "请先加载图像，标注文件需要和图像顺序/名称对应。"),
+                "save_annotations_btn": (has_annotations, "请先绘制或加载至少一个标注框。"),
+                "crop_resnet_dataset_btn": (has_annotations, "请先完成标注，才能导出分类裁剪数据。"),
+                "train_load_images_btn": (True, ""),
+                "train_load_annotations_btn": (has_images, "请先加载训练图像，再加载对应标注。"),
+                "train_load_yolo_model_btn": (True, ""),
+                "train_load_resnet_model_btn": (True, ""),
+                "train_yolo_btn": (
+                    has_images and has_annotations and has_yolo_model,
+                    "训练检测模型需要：图像、标注、检测模型权重。",
+                ),
+                "train_resnet_btn": (
+                    has_resnet_model and (has_resnet_data or (has_images and has_annotations)),
+                    "训练分类模型需要：分类模型权重，以及外部 ResNet 数据或当前图像标注。",
+                ),
+                "infer_load_images_btn": (True, ""),
+                "infer_load_yolo_model_btn": (True, ""),
+                "infer_load_resnet_model_btn": (True, ""),
+                "start_inference_btn": (
+                    has_infer_images and has_yolo_model and has_resnet_model,
+                    "开始推理需要：推理图像、检测模型、分类模型。",
+                ),
+                "use_selected_result_btn": (has_selected_result, "请先在结果列表中选择一条扫描结果。"),
+                "open_result_dir_btn": (has_selected_result_directory, "请先选择带有导出目录的扫描结果。"),
+            }
+            for attr_name, (enabled, tooltip) in button_states.items():
+                self._set_button_state(attr_name, enabled, tooltip)
 
             self._refresh_status_labels()
         except Exception as exc:  # noqa: BLE001

@@ -272,6 +272,8 @@ class StudioController:
         if hasattr(self.window, "result_compare_summary_text"):
             self.window.result_compare_summary_text.setPlainText(self._build_result_comparison_summary())
         self._set_compare_preview_placeholder("尚未选择对比项", "选择对比项后，这里会显示对比预览。")
+        if hasattr(self.window, "update_button_states"):
+            self.window.update_button_states()
 
     def _clear_workspace_view(self) -> None:
         annotation_tool = getattr(self.window, "annotation_tool", None)
@@ -1305,6 +1307,8 @@ class StudioController:
         if hasattr(self.window, "result_compare_summary_text"):
             self.window.result_compare_summary_text.setPlainText(self._build_result_comparison_summary())
         self._update_compare_preview()
+        if hasattr(self.window, "update_button_states"):
+            self.window.update_button_states()
 
     def on_inference_finished(self) -> None:
         if self.window.pending_inference_session_id and self.window.pending_inference_output_dir:
@@ -1359,6 +1363,8 @@ class StudioController:
             if hasattr(self.window, "result_compare_summary_text"):
                 self.window.result_compare_summary_text.setPlainText(self._build_result_comparison_summary())
             self._update_compare_preview()
+            if hasattr(self.window, "update_button_states"):
+                self.window.update_button_states()
             return
         self.window.result_detail_text.setPlainText(detail)
         self._update_result_preview(result)
@@ -1366,6 +1372,8 @@ class StudioController:
         if hasattr(self.window, "result_compare_summary_text"):
             self.window.result_compare_summary_text.setPlainText(self._build_result_comparison_summary())
         self._update_compare_preview()
+        if hasattr(self.window, "update_button_states"):
+            self.window.update_button_states()
 
     def handle_service_result(self, key: str, result: object) -> None:
         self._set_async_busy(False)

@@ -222,7 +222,7 @@ class SessionWorkflowService:
             time_text = self._format_time(info.get("captured_at", "")).split(" ")[-1] if info.get("captured_at") else "未记录时间"
             labels.append(
                 f"{index}. {item.label or f'扫描结果 {index}'}\n"
-                f"{size_text} | {time_text} | {channel_text}"
+                f"{size_text} | {time_text} | {channel_text} | 导出 {info.get('saved_count', 0)} 个文件"
             )
         return labels
 
