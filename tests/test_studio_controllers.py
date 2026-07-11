@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import QApplication, QWidget
 
 from app.core import AnnotationState, ScanResultRecord
 from app.ui.annotation_tool import AnnotationTool
+from app.ui.loss_curve_dialog import LossCurveDialog
 from app.windows.studio_window import ReSTOLOStudioApp
 from app.windows.runtime_controller import StudioRuntimeController
 from app.windows.studio_controller import StudioController
@@ -346,6 +347,47 @@ def test_annotation_tool_load_state_renders_pixmap_for_png(tmp_path: Path):
     assert "sample.png" in tool.status_label.text()
 
 
+def test_annotation_tool_moves_secondary_actions_into_more_menu_when_compact():
+    app = QApplication.instance() or QApplication([])
+    tool = AnnotationTool()
+    tool.resize(800, 700)
+    tool.show()
+    app.processEvents()
+
+    assert not tool.more_btn.isHidden()
+    assert tool.clear_btn.isHidden()
+    assert tool.delete_btn.isHidden()
+
+    tool.resize(1000, 700)
+    app.processEvents()
+
+    assert tool.more_btn.isHidden()
+    assert not tool.clear_btn.isHidden()
+    assert not tool.delete_btn.isHidden()
+
+
+def test_annotation_tool_hides_removed_class_buttons_immediately():
+    app = QApplication.instance() or QApplication([])
+    tool = AnnotationTool()
+    tool.show()
+    tool.load_state(AnnotationState(class_names=[str(index) for index in range(1, 9)]))
+    app.processEvents()
+
+    visible_class_buttons = [button for button in tool.findChildren(type(tool.class_buttons[0])) if button.isVisible()]
+    visible_class_names = [button.text() for button in visible_class_buttons if button.isCheckable()]
+    assert visible_class_names == [str(index) for index in range(1, 9)]
+
+
+def test_loss_curve_dialog_marks_best_validation_metric():
+    app = QApplication.instance() or QApplication([])
+    dialog = LossCurveDialog(mode="yolo")
+    dialog.update_val_metrics(1, 0.5, 0.6, 0.55, 0.30)
+    dialog.update_val_metrics(2, 0.8, 0.7, 0.75, 0.52)
+    app.processEvents()
+
+    assert any("最佳 0.520" in text.get_text() for text in dialog.ax_metrics.texts)
+
+
 def test_studio_window_persists_and_restores_ui_sizes(tmp_path: Path):
     app = QApplication.instance() or QApplication([])
     runtime = __import__("app.runtime", fromlist=["AppRuntime"]).AppRuntime.create(tmp_path)
@@ -367,7 +409,7 @@ def test_studio_window_persists_and_restores_ui_sizes(tmp_path: Path):
     assert other_window.height() >= 900
 
 
-def test_studio_window_uses_wider_default_left_panel_width(tmp_path: Path):
+def test_studio_window_uses_compact_proportional_left_panel_width(tmp_path: Path):
     app = QApplication.instance() or QApplication([])
     runtime = __import__("app.runtime", fromlist=["AppRuntime"]).AppRuntime.create(tmp_path)
 
@@ -376,7 +418,53 @@ def test_studio_window_uses_wider_default_left_panel_width(tmp_path: Path):
     app.processEvents()
 
     sizes = window.main_splitter.sizes()
-    assert sizes[0] >= 560
+    assert 460 <= sizes[0] <= 620
+    assert sizes[0] < sizes[1]
+
+
+def test_studio_window_persists_collapsible_ui_preferences(tmp_path: Path):
+    app = QApplication.instance() or QApplication([])
+    runtime_module = __import__("app.runtime", fromlist=["AppRuntime"])
+    runtime = runtime_module.AppRuntime.create(tmp_path)
+
+    window = ReSTOLOStudioApp(runtime)
+    app.processEvents()
+
+    assert not window.training_advanced_section.is_expanded()
+    assert not window.inference_advanced_section.is_expanded()
+    assert not window.results_compare_section.is_expanded()
+    assert not window.log_section.is_expanded()
+
+    window.training_advanced_section.set_expanded(True)
+    window.inference_advanced_section.set_expanded(True)
+    window.results_compare_section.set_expanded(True)
+    window.set_log_expanded(True)
+
+    assert runtime.config_service.data["ui_training_advanced_expanded"] is True
+    assert runtime.config_service.data["ui_inference_advanced_expanded"] is True
+    assert runtime.config_service.data["ui_results_compare_expanded"] is True
+    assert runtime.config_service.data["ui_log_expanded"] is True
+
+    other_runtime = runtime_module.AppRuntime.create(tmp_path)
+    other_window = ReSTOLOStudioApp(other_runtime)
+    app.processEvents()
+
+    assert other_window.training_advanced_section.is_expanded()
+    assert other_window.inference_advanced_section.is_expanded()
+    assert other_window.results_compare_section.is_expanded()
+    assert other_window.log_section.is_expanded()
+
+
+def test_studio_window_expands_log_drawer_for_errors(tmp_path: Path):
+    app = QApplication.instance() or QApplication([])
+    runtime = __import__("app.runtime", fromlist=["AppRuntime"]).AppRuntime.create(tmp_path)
+    window = ReSTOLOStudioApp(runtime)
+    window.set_log_expanded(False)
+
+    window._log_slot("推理失败：模型不兼容")
+
+    assert window.log_section.is_expanded()
+    assert "推理失败" in window.log_toggle.text()
 
 
 def test_studio_window_prefers_latest_session_training_models_on_startup(tmp_path: Path):

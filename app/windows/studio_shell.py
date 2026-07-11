@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QCheckBox,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QProgressBar,
@@ -29,14 +30,22 @@ from app.utils.training_manager import TrainingManager
 from app.windows.studio_ui import BASE_COLOR, BORDER_COLOR, DARK_BG, MUTED_COLOR, PANEL_BG, TEXT_COLOR
 
 
-def _create_collapsible_section(title: str, content: QWidget, expanded: bool = False) -> QWidget:
+def _create_collapsible_section(
+    title: str,
+    content: QWidget,
+    expanded: bool = False,
+    object_name: str = "",
+) -> QWidget:
     container = QWidget()
+    if object_name:
+        container.setObjectName(object_name)
     layout = QVBoxLayout(container)
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(4)
 
     toggle = QToolButton()
     toggle.setText(title)
+    toggle.setProperty("sectionToggle", "true")
     toggle.setCheckable(True)
     toggle.setChecked(expanded)
     toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
@@ -48,6 +57,10 @@ def _create_collapsible_section(title: str, content: QWidget, expanded: bool = F
         content.setVisible(checked)
 
     toggle.toggled.connect(_toggle)
+    container.toggle_button = toggle
+    container.content_widget = content
+    container.set_expanded = toggle.setChecked
+    container.is_expanded = toggle.isChecked
     layout.addWidget(toggle)
     layout.addWidget(content)
     return container
@@ -59,6 +72,8 @@ def _create_status_group(window, object_name: str, *labels: QLabel) -> QWidget:
     layout = QVBoxLayout()
     layout.setSpacing(4)
     for label in labels:
+        label.setWordWrap(True)
+        label.setProperty("uiState", "normal")
         layout.addWidget(label)
     group.layout().addLayout(layout)
     return group
@@ -67,6 +82,22 @@ def _create_status_group(window, object_name: str, *labels: QLabel) -> QWidget:
 def _add_widgets(layout, *widgets: QWidget) -> None:
     for widget in widgets:
         layout.addWidget(widget)
+
+
+def _resource_row(window, label_text: str, path_widget: QWidget, button: QWidget) -> QWidget:
+    row = QWidget()
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(6)
+    label = window.create_label(label_text)
+    label.setMinimumWidth(78)
+    label.setProperty("muted", "true")
+    button.setText("更换")
+    button.setMaximumWidth(88)
+    layout.addWidget(label)
+    layout.addWidget(path_widget, 1)
+    layout.addWidget(button)
+    return row
 
 
 def _style_reference_group(group: QWidget) -> QWidget:
@@ -118,15 +149,19 @@ def _build_annotation_tab(window) -> QWidget:
     layout.setSpacing(10)
 
     data_group = _style_reference_group(window.create_group("数据管理"))
-    data_layout = QVBoxLayout()
-    data_layout.setSpacing(8)
+    data_layout = QGridLayout()
+    data_layout.setHorizontalSpacing(6)
+    data_layout.setVerticalSpacing(6)
     window.load_images_btn = window.create_button("加载图像", window.load_images)
     window.load_annotations_btn = window.create_button("加载标注", window.load_annotations)
     window.save_annotations_btn = window.create_button("保存标注", window.save_annotations)
     window.crop_resnet_dataset_btn = window.create_button("导出分类裁剪", window.crop_resnet_dataset)
     window.crop_resnet_dataset_btn.setToolTip("按当前标注导出 ResNet 分类训练裁剪图。")
     _hide_runtime_widget(window.crop_resnet_dataset_btn)
-    _add_widgets(data_layout, window.load_images_btn, window.load_annotations_btn, window.save_annotations_btn, window.crop_resnet_dataset_btn)
+    data_layout.addWidget(window.load_images_btn, 0, 0)
+    data_layout.addWidget(window.load_annotations_btn, 0, 1)
+    data_layout.addWidget(window.save_annotations_btn, 1, 0, 1, 2)
+    data_layout.addWidget(window.crop_resnet_dataset_btn, 2, 0, 1, 2)
     data_group.layout().addLayout(data_layout)
     layout.addWidget(data_group)
 
@@ -190,14 +225,23 @@ def _build_training_tab(window) -> QWidget:
     layout.setSpacing(10)
 
     data_group = _style_reference_group(window.create_group("训练数据"))
-    data_layout = QVBoxLayout()
-    data_layout.setSpacing(8)
+    data_layout = QGridLayout()
+    data_layout.setHorizontalSpacing(6)
+    data_layout.setVerticalSpacing(6)
     window.train_data_layout = data_layout
     window.train_load_images_btn = window.create_button("加载图像", window.load_images)
     window.train_load_annotations_btn = window.create_button("加载标注", window.load_annotations)
     window.train_load_resnet_data_btn = window.create_button("加载ResNet数据", window.load_resnet_data)
     window.train_resnet_data_path = window.create_line_edit("ResNet 数据路径")
-    _add_widgets(data_layout, window.train_load_images_btn, window.train_load_annotations_btn, window.train_load_resnet_data_btn, window.train_resnet_data_path)
+    data_layout.addWidget(window.train_load_images_btn, 0, 0)
+    data_layout.addWidget(window.train_load_annotations_btn, 0, 1)
+    data_layout.addWidget(
+        _resource_row(window, "外部分类集", window.train_resnet_data_path, window.train_load_resnet_data_btn),
+        1,
+        0,
+        1,
+        2,
+    )
     data_group.layout().addLayout(data_layout)
     layout.addWidget(data_group)
 
@@ -213,9 +257,14 @@ def _build_training_tab(window) -> QWidget:
     window.train_resnet_model_path = window.create_line_edit("分类模型路径")
     window.train_classes_path = window.create_line_edit("类别文件路径")
     _hide_runtime_widget(window.train_classes_path)
-    _add_widgets(model_layout, window.train_load_yolo_model_btn, window.train_yolo_model_path, window.train_load_resnet_model_btn, window.train_resnet_model_path, window.train_classes_path)
+    model_layout.addWidget(
+        _resource_row(window, "检测模型", window.train_yolo_model_path, window.train_load_yolo_model_btn)
+    )
+    model_layout.addWidget(
+        _resource_row(window, "分类模型", window.train_resnet_model_path, window.train_load_resnet_model_btn)
+    )
+    model_layout.addWidget(window.train_classes_path)
     model_group.layout().addLayout(model_layout)
-    layout.addWidget(model_group)
 
     params_group = window.create_group("训练参数")
     params_layout = QVBoxLayout()
@@ -282,17 +331,6 @@ def _build_training_tab(window) -> QWidget:
         _hide_runtime_widget(augment_label)
     _hide_runtime_widget(window.augment_checkbox)
     params_group.layout().addLayout(params_layout)
-    layout.addWidget(params_group)
-
-    control_group = window.create_group("训练控制")
-    control_layout = QVBoxLayout()
-    control_layout.setSpacing(8)
-    window.train_yolo_btn = window.create_button("训练YOLO", window.train_yolo)
-    window.train_resnet_btn = window.create_button("训练ResNet", window.train_resnet)
-    control_layout.addWidget(window.train_yolo_btn)
-    control_layout.addWidget(window.train_resnet_btn)
-    control_group.layout().addLayout(control_layout)
-    layout.addWidget(control_group)
 
     window.training_dataset_status_detail = QLabel("")
     window.training_model_status_detail = QLabel("")
@@ -305,6 +343,31 @@ def _build_training_tab(window) -> QWidget:
         window.training_run_status_detail,
     )
     layout.addWidget(status_group)
+
+    control_group = window.create_group("开始训练")
+    control_layout = QGridLayout()
+    control_layout.setHorizontalSpacing(6)
+    control_layout.setVerticalSpacing(6)
+    window.train_yolo_btn = window.create_button("训练检测模型", window.train_yolo, accent=True)
+    window.train_resnet_btn = window.create_button("训练分类模型", window.train_resnet)
+    control_layout.addWidget(window.train_yolo_btn, 0, 0)
+    control_layout.addWidget(window.train_resnet_btn, 0, 1)
+    control_group.layout().addLayout(control_layout)
+    layout.addWidget(control_group)
+
+    advanced_content = QWidget()
+    advanced_layout = QVBoxLayout(advanced_content)
+    advanced_layout.setContentsMargins(0, 0, 0, 0)
+    advanced_layout.setSpacing(8)
+    advanced_layout.addWidget(model_group)
+    advanced_layout.addWidget(params_group)
+    window.training_advanced_section = _create_collapsible_section(
+        "高级训练设置",
+        advanced_content,
+        expanded=False,
+        object_name="training_advanced_section",
+    )
+    layout.addWidget(window.training_advanced_section)
     layout.addStretch()
     return tab
 
@@ -333,17 +396,16 @@ def _build_inference_tab(window) -> QWidget:
     window.infer_resnet_model_path = window.create_line_edit("ResNet 模型路径")
     window.infer_load_classes_btn = window.create_button("加载类别文件", window.load_classes_file)
     window.infer_classes_path = window.create_line_edit("类别文件路径")
-    _add_widgets(model_layout, window.infer_load_yolo_model_btn, window.infer_yolo_model_path, window.infer_load_resnet_model_btn, window.infer_resnet_model_path, window.infer_load_classes_btn, window.infer_classes_path)
+    model_layout.addWidget(
+        _resource_row(window, "检测模型", window.infer_yolo_model_path, window.infer_load_yolo_model_btn)
+    )
+    model_layout.addWidget(
+        _resource_row(window, "分类模型", window.infer_resnet_model_path, window.infer_load_resnet_model_btn)
+    )
+    model_layout.addWidget(
+        _resource_row(window, "类别文件", window.infer_classes_path, window.infer_load_classes_btn)
+    )
     model_group.layout().addLayout(model_layout)
-    layout.addWidget(model_group)
-
-    control_group = _style_reference_group(window.create_group("推理控制"))
-    control_layout = QVBoxLayout()
-    control_layout.setSpacing(8)
-    window.start_inference_btn = window.create_button("开始推理", window.start_inference)
-    control_layout.addWidget(window.start_inference_btn)
-    control_group.layout().addLayout(control_layout)
-    layout.addWidget(control_group)
 
     window.inference_batch_status_detail = QLabel("")
     window.inference_model_status_detail = QLabel("")
@@ -357,6 +419,22 @@ def _build_inference_tab(window) -> QWidget:
         window.inference_result_status_detail,
     )
     layout.addWidget(status_group)
+
+    control_group = _style_reference_group(window.create_group("执行任务"))
+    control_layout = QVBoxLayout()
+    control_layout.setSpacing(8)
+    window.start_inference_btn = window.create_button("开始推理", window.start_inference, accent=True)
+    control_layout.addWidget(window.start_inference_btn)
+    control_group.layout().addLayout(control_layout)
+    layout.addWidget(control_group)
+
+    window.inference_advanced_section = _create_collapsible_section(
+        "高级模型设置",
+        model_group,
+        expanded=False,
+        object_name="inference_advanced_section",
+    )
+    layout.addWidget(window.inference_advanced_section)
     layout.addStretch()
     return tab
 
@@ -401,12 +479,24 @@ def _build_right_panel(window) -> QVBoxLayout:
 
     window.log_text = QTextEdit()
     window.log_text.setReadOnly(True)
-    window.log_text.setMinimumHeight(110)
-    window.log_text.setMaximumHeight(170)
+    window.log_text.setMinimumHeight(90)
+    window.log_text.setMaximumHeight(240)
     window.log_text.setPlaceholderText("日志输出区域...")
     window.style_readonly_summary(window.log_text)
-    layout.addWidget(window.create_label("运行日志"))
-    layout.addWidget(window.log_text)
+    log_panel = QWidget()
+    log_layout = QVBoxLayout(log_panel)
+    log_layout.setContentsMargins(0, 0, 0, 0)
+    log_layout.setSpacing(4)
+    log_layout.addWidget(window.log_text)
+    window.log_section = _create_collapsible_section(
+        "运行日志 · 就绪",
+        log_panel,
+        expanded=False,
+        object_name="log_section",
+    )
+    window.log_toggle = window.log_section.toggle_button
+    window.log_toggle.toggled.connect(window._on_log_section_toggled)
+    layout.addWidget(window.log_section)
 
     window.progress_bar = QProgressBar()
     window.progress_bar.setRange(0, 100)
@@ -469,13 +559,13 @@ def initialize_studio_shell(window) -> None:
     splitter.setHandleWidth(12)
     left_widget = QWidget()
     left_widget.setLayout(left_layout)
-    left_widget.setMinimumWidth(500)
-    left_widget.setMaximumWidth(720)
+    left_widget.setMinimumWidth(460)
+    left_widget.setMaximumWidth(620)
     right_widget = QWidget()
     right_widget.setLayout(right_layout)
     splitter.addWidget(left_widget)
     splitter.addWidget(right_widget)
-    splitter.setSizes([540, 860])
+    splitter.setSizes([500, 900])
     window.main_splitter = splitter
     window.left_panel_widget = left_widget
     window.right_panel_widget = right_widget
@@ -498,6 +588,31 @@ class StudioShellSignalsMixin:
     def log(self, message):
         self.log_signal.emit(message)
 
+    def _save_ui_preference(self, key: str, value) -> None:
+        config_service = getattr(self, "config_service", None)
+        if config_service is None:
+            return
+        payload = dict(getattr(config_service, "data", {}) or {})
+        if payload.get(key) == value:
+            return
+        payload[key] = value
+        config_service.save(payload)
+
+    def _on_log_section_toggled(self, expanded: bool) -> None:
+        self._save_ui_preference("ui_log_expanded", bool(expanded))
+
+    def set_log_expanded(self, expanded: bool) -> None:
+        section = getattr(self, "log_section", None)
+        if section is not None and hasattr(section, "set_expanded"):
+            section.set_expanded(bool(expanded))
+
     def _log_slot(self, message):
         if hasattr(self, "log_text"):
             self.log_text.append(message)
+        text = str(message).strip().splitlines()[0] if str(message).strip() else "就绪"
+        if hasattr(self, "log_toggle"):
+            summary = text if len(text) <= 28 else text[:27] + "…"
+            self.log_toggle.setText(f"运行日志 · {summary}")
+        auto_expand_tokens = ("失败", "错误", "开始训练", "开始推理", "训练设备", "Training Loss")
+        if any(token in text for token in auto_expand_tokens):
+            self.set_log_expanded(True)

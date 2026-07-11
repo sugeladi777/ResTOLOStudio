@@ -47,6 +47,7 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
         self.studio.apply_current_session_model_paths()
         self._restore_window_geometry()
         self._restore_splitter_state()
+        self._restore_ui_preferences()
         QTimer.singleShot(0, self._restore_splitter_state)
         splitter = getattr(self, "main_splitter", None)
         if splitter is not None:
@@ -135,9 +136,9 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
     def _recommended_left_panel_width(self) -> int:
         left_widget = getattr(self, "left_panel_widget", None)
         if left_widget is None:
-            return 540
+            return 500
 
-        preferred_width = max(540, left_widget.sizeHint().width(), left_widget.minimumSizeHint().width())
+        preferred_width = 500
         tab_widget = getattr(self, "tab_widget", None)
         tab_bar = tab_widget.tabBar() if tab_widget is not None and hasattr(tab_widget, "tabBar") else None
         if isinstance(tab_bar, QTabBar):
@@ -156,11 +157,32 @@ class ReSTOLOStudioApp(StudioUiMixin, StudioPanelsMixin, StudioShellSignalsMixin
         left_width = ui_config.get("ui_left_panel_width")
         recommended_width = max(left_widget.minimumWidth(), self._recommended_left_panel_width())
         if isinstance(left_width, int):
-            left_width = max(recommended_width, min(left_width, left_widget.maximumWidth()))
+            left_width = max(left_widget.minimumWidth(), min(left_width, left_widget.maximumWidth()))
         else:
-            left_width = recommended_width
+            proportional_width = int(max(1000, self.width()) * 0.34)
+            left_width = max(recommended_width, min(proportional_width, left_widget.maximumWidth()))
         total_width = max(self.width(), left_width + 400)
         splitter.setSizes([left_width, max(400, total_width - left_width)])
+
+    def _restore_ui_preferences(self):
+        config_service = getattr(self, "config_service", None)
+        if config_service is None:
+            return
+        payload = dict(getattr(config_service, "data", {}) or {})
+        sections = (
+            ("training_advanced_section", "ui_training_advanced_expanded"),
+            ("inference_advanced_section", "ui_inference_advanced_expanded"),
+            ("results_compare_section", "ui_results_compare_expanded"),
+        )
+        for attr_name, config_key in sections:
+            section = getattr(self, attr_name, None)
+            if section is None or not hasattr(section, "set_expanded"):
+                continue
+            section.set_expanded(bool(payload.get(config_key, False)))
+            section.toggle_button.toggled.connect(
+                lambda checked, key=config_key: self._save_ui_preference(key, bool(checked))
+            )
+        self.set_log_expanded(bool(payload.get("ui_log_expanded", False)))
 
     def _persist_splitter_state(self, pos: int, index: int):
         del index

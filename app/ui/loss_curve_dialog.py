@@ -61,7 +61,8 @@ class LossCurveDialog(QDialog):
 
     def _style_ax(self, ax):
         ax.set_facecolor(PANEL_BG)
-        ax.tick_params(colors=TEXT_COLOR, labelsize=8)
+        ax.tick_params(colors=TEXT_COLOR, labelsize=10)
+        ax.grid(True, color="#505050", alpha=0.28, linewidth=0.7)
         for spine in ax.spines.values():
             spine.set_color(BORDER_COLOR)
         ax.xaxis.label.set_color(TEXT_COLOR)
@@ -70,21 +71,21 @@ class LossCurveDialog(QDialog):
 
     def _setup_yolo_axes(self):
         self._style_ax(self.ax_train)
-        self.ax_train.set_title("训练损失", fontsize=11)
-        self.ax_train.set_xlabel("轮次", fontsize=9)
-        self.ax_train.set_ylabel("损失", fontsize=9)
+        self.ax_train.set_title("训练损失", fontsize=13)
+        self.ax_train.set_xlabel("轮次", fontsize=11)
+        self.ax_train.set_ylabel("损失", fontsize=11)
 
         self._style_ax(self.ax_metrics)
-        self.ax_metrics.set_title("验证指标", fontsize=11)
-        self.ax_metrics.set_xlabel("轮次", fontsize=9)
-        self.ax_metrics.set_ylabel("分数", fontsize=9)
+        self.ax_metrics.set_title("验证指标", fontsize=13)
+        self.ax_metrics.set_xlabel("轮次", fontsize=11)
+        self.ax_metrics.set_ylabel("分数", fontsize=11)
         self.ax_metrics.set_ylim(0.0, 1.05)
 
     def _setup_resnet_axes(self):
         self._style_ax(self.ax_resnet)
-        self.ax_resnet.set_title("ResNet 训练曲线", fontsize=11)
-        self.ax_resnet.set_xlabel("轮次", fontsize=9)
-        self.ax_resnet.set_ylabel("损失", fontsize=9)
+        self.ax_resnet.set_title("ResNet 训练曲线", fontsize=13)
+        self.ax_resnet.set_xlabel("轮次", fontsize=11)
+        self.ax_resnet.set_ylabel("损失", fontsize=11)
 
     def update_train_loss(self, epoch, box, obj, cls, total):
         self.epochs.append(epoch)
@@ -97,16 +98,16 @@ class LossCurveDialog(QDialog):
     def _redraw_yolo_train(self):
         self.ax_train.clear()
         self._style_ax(self.ax_train)
-        self.ax_train.set_title("训练损失", fontsize=11)
-        self.ax_train.set_xlabel("轮次", fontsize=9)
-        self.ax_train.set_ylabel("损失", fontsize=9)
+        self.ax_train.set_title("训练损失", fontsize=13)
+        self.ax_train.set_xlabel("轮次", fontsize=11)
+        self.ax_train.set_ylabel("损失", fontsize=11)
 
         self.ax_train.plot(self.epochs, self.box_loss, label="框损失", color="#FF6B6B", linewidth=1.2)
         self.ax_train.plot(self.epochs, self.obj_loss, label="目标损失", color="#4ECDC4", linewidth=1.2)
         self.ax_train.plot(self.epochs, self.cls_loss, label="分类损失", color="#FFE66D", linewidth=1.2)
         self.ax_train.plot(self.epochs, self.total_loss, label="总损失", color=BASE_COLOR, linewidth=1.8)
 
-        legend = self.ax_train.legend(loc="upper right", fontsize=8, facecolor=PANEL_BG, edgecolor=BORDER_COLOR)
+        legend = self.ax_train.legend(loc="upper right", fontsize=10, facecolor=PANEL_BG, edgecolor=BORDER_COLOR)
         for text in legend.get_texts():
             text.set_color(TEXT_COLOR)
 
@@ -124,17 +125,30 @@ class LossCurveDialog(QDialog):
     def _redraw_yolo_metrics(self):
         self.ax_metrics.clear()
         self._style_ax(self.ax_metrics)
-        self.ax_metrics.set_title("验证指标", fontsize=11)
-        self.ax_metrics.set_xlabel("轮次", fontsize=9)
-        self.ax_metrics.set_ylabel("分数", fontsize=9)
+        self.ax_metrics.set_title("验证指标", fontsize=13)
+        self.ax_metrics.set_xlabel("轮次", fontsize=11)
+        self.ax_metrics.set_ylabel("分数", fontsize=11)
         self.ax_metrics.set_ylim(0.0, 1.05)
 
         self.ax_metrics.plot(self.metric_epochs, self.precision_data, label="Precision", color="#5BC0EB", linewidth=1.2)
         self.ax_metrics.plot(self.metric_epochs, self.recall_data, label="Recall", color="#9BC53D", linewidth=1.2)
         self.ax_metrics.plot(self.metric_epochs, self.map50_data, label="mAP@0.5", color="#FDE74C", linewidth=1.2)
         self.ax_metrics.plot(self.metric_epochs, self.map50_95_data, label="mAP@0.5:0.95", color=BASE_COLOR, linewidth=1.8)
+        if self.map50_95_data:
+            best_index = max(range(len(self.map50_95_data)), key=self.map50_95_data.__getitem__)
+            best_epoch = self.metric_epochs[best_index]
+            best_score = self.map50_95_data[best_index]
+            self.ax_metrics.scatter([best_epoch], [best_score], color="#FFFFFF", edgecolor=BASE_COLOR, zorder=5)
+            self.ax_metrics.annotate(
+                f"最佳 {best_score:.3f}",
+                (best_epoch, best_score),
+                xytext=(8, 8),
+                textcoords="offset points",
+                color=TEXT_COLOR,
+                fontsize=10,
+            )
 
-        legend = self.ax_metrics.legend(loc="lower right", fontsize=8, facecolor=PANEL_BG, edgecolor=BORDER_COLOR)
+        legend = self.ax_metrics.legend(loc="lower right", fontsize=10, facecolor=PANEL_BG, edgecolor=BORDER_COLOR)
         for text in legend.get_texts():
             text.set_color(TEXT_COLOR)
 
@@ -150,14 +164,27 @@ class LossCurveDialog(QDialog):
     def _redraw_resnet(self):
         self.ax_resnet.clear()
         self._style_ax(self.ax_resnet)
-        self.ax_resnet.set_title("ResNet 训练曲线", fontsize=11)
-        self.ax_resnet.set_xlabel("轮次", fontsize=9)
-        self.ax_resnet.set_ylabel("损失", fontsize=9)
+        self.ax_resnet.set_title("ResNet 训练曲线", fontsize=13)
+        self.ax_resnet.set_xlabel("轮次", fontsize=11)
+        self.ax_resnet.set_ylabel("损失", fontsize=11)
 
         self.ax_resnet.plot(self.resnet_epochs, self.train_loss_data, label="训练损失", color="#FF6B6B", linewidth=1.2)
         self.ax_resnet.plot(self.resnet_epochs, self.pred_error_data, label="预测误差", color=BASE_COLOR, linewidth=1.8)
+        if self.pred_error_data:
+            best_index = min(range(len(self.pred_error_data)), key=self.pred_error_data.__getitem__)
+            best_epoch = self.resnet_epochs[best_index]
+            best_error = self.pred_error_data[best_index]
+            self.ax_resnet.scatter([best_epoch], [best_error], color="#FFFFFF", edgecolor=BASE_COLOR, zorder=5)
+            self.ax_resnet.annotate(
+                f"最佳 {best_error:.3f}",
+                (best_epoch, best_error),
+                xytext=(8, 8),
+                textcoords="offset points",
+                color=TEXT_COLOR,
+                fontsize=10,
+            )
 
-        legend = self.ax_resnet.legend(loc="upper right", fontsize=8, facecolor=PANEL_BG, edgecolor=BORDER_COLOR)
+        legend = self.ax_resnet.legend(loc="upper right", fontsize=10, facecolor=PANEL_BG, edgecolor=BORDER_COLOR)
         for text in legend.get_texts():
             text.set_color(TEXT_COLOR)
 

@@ -39,6 +39,17 @@ class StudioRuntimeController:
         if hasattr(target, "setText"):
             target.setText(text)
 
+    def _set_label_state(self, attr_name: str, state: str) -> None:
+        target = getattr(self.window, attr_name, None)
+        if target is None or not hasattr(target, "setProperty"):
+            return
+        target.setProperty("uiState", state)
+        style = target.style()
+        if style is not None:
+            style.unpolish(target)
+            style.polish(target)
+        target.update()
+
     def _annotation_state(self):
         tool = getattr(self.window, "annotation_tool", None)
         if tool is None or not hasattr(tool, "export_state"):
@@ -155,22 +166,30 @@ class StudioRuntimeController:
 
         if images:
             self._set_label_text("annotation_status_detail", f"已加载 {len(images)} 张图像，共 {annotation_count} 个标注。")
+            self._set_label_state("annotation_status_detail", "ready")
         else:
             self._set_label_text("annotation_status_detail", "尚未加载图像。")
+            self._set_label_state("annotation_status_detail", "normal")
 
         used_classes = self._used_annotation_classes(annotations)
         if used_classes:
             self._set_label_text("annotation_classes_detail", f"已使用类别：{', '.join(used_classes)}")
+            self._set_label_state("annotation_classes_detail", "ready")
         else:
             self._set_label_text("annotation_classes_detail", "尚未识别到已使用类别。")
+            self._set_label_state("annotation_classes_detail", "normal")
 
         infer_images = self._inference_images()
         if infer_images:
             self._set_label_text("inference_input_status_detail", f"推理队列中有 {len(infer_images)} 张图像。")
             self._set_label_text("inference_batch_status_detail", f"当前批次：{len(infer_images)} 张图像。")
+            self._set_label_state("inference_input_status_detail", "ready")
+            self._set_label_state("inference_batch_status_detail", "ready")
         else:
             self._set_label_text("inference_input_status_detail", "尚未加载推理图像。")
             self._set_label_text("inference_batch_status_detail", "当前没有推理批次。")
+            self._set_label_state("inference_input_status_detail", "normal")
+            self._set_label_state("inference_batch_status_detail", "normal")
 
         model_text = self._model_status_text()
         self._set_label_text("training_model_status_detail", model_text)
@@ -181,6 +200,19 @@ class StudioRuntimeController:
         )
         self._set_label_text("training_run_status_detail", self._training_run_status_text())
         self._set_label_text("inference_result_status_detail", self._inference_result_status_text())
+        model_state = "ready" if self._has_yolo_model() and self._has_resnet_model() else "warning"
+        dataset_state = "ready" if images and annotation_count else "warning" if images else "normal"
+        self._set_label_state("training_model_status_detail", model_state)
+        self._set_label_state("inference_model_status_detail", model_state)
+        self._set_label_state("training_dataset_status_detail", dataset_state)
+        self._set_label_state(
+            "training_run_status_detail",
+            "running" if getattr(self.window, "pending_training_context", None) is not None else "normal",
+        )
+        self._set_label_state(
+            "inference_result_status_detail",
+            "running" if getattr(self.window, "pending_inference_session_id", None) else "normal",
+        )
 
         current_index = getattr(getattr(self.window, "tab_widget", None), "currentIndex", lambda: 0)()
         mode_text = {
@@ -203,8 +235,11 @@ class StudioRuntimeController:
                 if suggestion:
                     error_display += f"\n\n建议：{suggestion}"
         self.window.log(error_display)
+        if hasattr(self.window, "set_log_expanded"):
+            self.window.set_log_expanded(True)
         QMessageBox.warning(self.window, "推理失败", error_display)
         self._set_label_text("inference_result_status_detail", error_display)
+        self._set_label_state("inference_result_status_detail", "error")
         self.enable_controls()
 
     def on_inference_finished(self) -> None:
@@ -217,6 +252,7 @@ class StudioRuntimeController:
             if result_images:
                 self.window.log(f"找到 {len(result_images)} 张推理结果图像。")
                 self._set_label_text("inference_result_status_detail", f"推理完成，生成 {len(result_images)} 张结果图像。")
+                self._set_label_state("inference_result_status_detail", "success")
                 annotation_tool = getattr(self.window, "annotation_tool", None)
                 if annotation_tool is not None and hasattr(self.window, "annotation_service"):
                     state = self.window.annotation_service.create_state(result_images)
@@ -272,6 +308,7 @@ class StudioRuntimeController:
     def on_training_finished(self) -> None:
         self.window.log("训练完成。")
         self._set_label_text("training_run_status_detail", "训练已完成，结果已写入当前会话。")
+        self._set_label_state("training_run_status_detail", "success")
         if hasattr(self.window, "progress_bar"):
             self.window.progress_bar.hide()
         self._persist_training_result("completed")
@@ -292,7 +329,10 @@ class StudioRuntimeController:
                 if suggestion:
                     error_display += f"\n\n建议：{suggestion}"
         self.window.log(error_display)
+        if hasattr(self.window, "set_log_expanded"):
+            self.window.set_log_expanded(True)
         self._set_label_text("training_run_status_detail", error_display)
+        self._set_label_state("training_run_status_detail", "error")
         if hasattr(self.window, "progress_bar"):
             self.window.progress_bar.hide()
         self._persist_training_result("failed")
@@ -306,6 +346,7 @@ class StudioRuntimeController:
                 self.window.progress_bar.setValue(progress)
                 self.window.log(f"训练进度：第 {current}/{total} 轮")
                 self._set_label_text("training_run_status_detail", f"训练进行中：第 {current}/{total} 轮，进度 {progress}%。")
+                self._set_label_state("training_run_status_detail", "running")
         except Exception as exc:  # noqa: BLE001
             self.window.log(f"更新训练进度失败：{exc}")
 

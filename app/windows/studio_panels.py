@@ -67,8 +67,9 @@ class StudioPanelsMixin:
             f"""
             QFrame {{
                 border: 1px solid {BORDER_COLOR};
-                border-radius: 2px;
-                background-color: {PANEL_BG};
+                border-left: 3px solid {MUTED_COLOR};
+                border-radius: 6px;
+                background-color: #202520;
             }}
             """
         )
@@ -77,10 +78,10 @@ class StudioPanelsMixin:
         layout.setSpacing(4)
 
         title_label = QLabel(title)
-        title_label.setStyleSheet(f"font-weight: 600; color: {TEXT_COLOR};")
+        title_label.setStyleSheet(f"font-weight: 600; font-size: 16px; color: {TEXT_COLOR};")
         description_label = QLabel(description)
         description_label.setWordWrap(True)
-        description_label.setStyleSheet(f"color: {MUTED_COLOR};")
+        description_label.setProperty("muted", "true")
 
         layout.addWidget(title_label)
         layout.addWidget(description_label)
@@ -140,7 +141,7 @@ class StudioPanelsMixin:
         layout.addWidget(toolbar)
 
         self.session_list = QListWidget()
-        self.session_list.setMinimumHeight(150)
+        self.session_list.setMinimumHeight(130)
         self.session_list.setWordWrap(True)
         self.session_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.session_list.setTextElideMode(Qt.ElideNone)
@@ -167,12 +168,12 @@ class StudioPanelsMixin:
         layout.addWidget(session_group)
 
         self.result_list = QListWidget()
-        self.result_list.setMinimumHeight(180)
+        self.result_list.setMinimumHeight(150)
         self.result_list.setWordWrap(True)
         self.result_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.result_list.setTextElideMode(Qt.ElideNone)
         self.result_list.setStyleSheet("font-size: 17px;")
-        self.result_detail_text = self._styled_readonly_text(min_height=144, max_height=220, placeholder="选择扫描结果后，这里会显示扫描参数、导出文件和来源信息。")
+        self.result_detail_text = self._styled_readonly_text(min_height=120, max_height=180, placeholder="选择扫描结果后，这里会显示扫描参数、导出文件和来源信息。")
         self.result_detail_text.setStyleSheet(self.result_detail_text.styleSheet() + "QTextEdit { font-size: 16px; line-height: 1.5; }")
         self.result_preview_label = self._preview_label("尚未选择结果", minimum_height=220)
         self.result_preview_caption = self._preview_caption("选择扫描结果后，这里会显示预览图。")
@@ -197,13 +198,26 @@ class StudioPanelsMixin:
         result_actions.addWidget(self.refresh_sessions_btn, 1, 0, 1, 2)
         result_layout.addLayout(result_actions)
         result_layout.addWidget(self.result_detail_text)
-        result_layout.addWidget(self.result_preview_label)
-        result_layout.addWidget(self.result_preview_caption)
-        result_layout.addWidget(self.create_label("结果对比"))
-        result_layout.addWidget(self.result_compare_combo)
-        result_layout.addWidget(self.result_compare_summary_text)
-        result_layout.addWidget(self.result_compare_preview_label)
-        result_layout.addWidget(self.result_compare_preview_caption)
+        self.result_preview_label.setParent(result_group)
+        self.result_preview_caption.setParent(result_group)
+        self.result_preview_label.hide()
+        self.result_preview_caption.hide()
+
+        compare_panel = QWidget()
+        compare_layout = QVBoxLayout(compare_panel)
+        compare_layout.setContentsMargins(0, 0, 0, 0)
+        compare_layout.setSpacing(6)
+        compare_layout.addWidget(self.result_compare_combo)
+        compare_layout.addWidget(self.result_compare_summary_text)
+        compare_layout.addWidget(self.result_compare_preview_label)
+        compare_layout.addWidget(self.result_compare_preview_caption)
+        self.results_compare_section = _create_collapsible_section(
+            "结果对比",
+            compare_panel,
+            expanded=False,
+            object_name="results_compare_section",
+        )
+        result_layout.addWidget(self.results_compare_section)
         layout.addWidget(result_group)
         layout.addStretch()
 

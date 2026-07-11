@@ -104,8 +104,8 @@ class AnnotationTool(QWidget):
                 border-radius: 3px;
                 padding: {self._scaled_int(8, scale)}px {self._scaled_int(14, scale)}px;
                 font-weight: normal;
-                font-size: {self._scaled_int(17, scale)}px;
-                min-height: {self._scaled_int(48, scale)}px;
+                font-size: {self._scaled_int(16, scale)}px;
+                min-height: {self._scaled_int(44, scale)}px;
             }}
             QPushButton:hover {{
                 background-color: #2F2F2F;
@@ -124,8 +124,17 @@ class AnnotationTool(QWidget):
             }}
             QPushButton:checked {{
                 background-color: {SELECTED_BG};
-                color: {TEXT_COLOR};
+                color: {HIGHLIGHT_COLOR};
                 border: 2px solid {SELECTED_BORDER};
+            }}
+            QPushButton[danger="true"] {{
+                color: #FF8A8A;
+                border-color: #704040;
+            }}
+            QPushButton[danger="true"]:hover {{
+                background-color: #4A2525;
+                color: #FFFFFF;
+                border-color: #FF6B6B;
             }}
             QLabel {{
                 color: {TEXT_COLOR};
@@ -153,6 +162,8 @@ class AnnotationTool(QWidget):
         self.more_btn.setText("更多")
         self.more_btn.setPopupMode(QToolButton.InstantPopup)
         self.more_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_btn.setProperty("danger", "true")
+        self.delete_btn.setProperty("danger", "true")
 
         more_menu = QMenu(self)
         self.clear_action = more_menu.addAction("清空标注")
@@ -205,8 +216,8 @@ class AnnotationTool(QWidget):
                 border-radius: 3px;
                 padding: {self._scaled_int(8, scale)}px {self._scaled_int(14, scale)}px;
                 font-weight: normal;
-                font-size: {self._scaled_int(17, scale)}px;
-                min-height: {self._scaled_int(48, scale)}px;
+                font-size: {self._scaled_int(16, scale)}px;
+                min-height: {self._scaled_int(44, scale)}px;
             }}
             QScrollArea QPushButton:hover {{
                 background-color: #2F2F2F;
@@ -298,10 +309,10 @@ class AnnotationTool(QWidget):
         self.image_label.setStyleSheet(
             f"""
             QLabel {{
-                background-color: {DARK_BG};
-                border: 1px dashed {BORDER_COLOR};
-                border-radius: 4px;
-                color: {MUTED_COLOR};
+                background-color: #151915;
+                border: 1px dashed #426043;
+                border-radius: 6px;
+                color: #9CF96D;
                 padding: 28px;
                 font-size: 20px;
             }}
@@ -331,9 +342,20 @@ class AnnotationTool(QWidget):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self.apply_responsive_styles()
+        self._update_toolbar_density()
         if hasattr(self, "class_scroll_area"):
             scale = self._ui_scale_factor()
             self.class_scroll_area.setMinimumHeight(self._scaled_int(82, scale))
+
+    def _update_toolbar_density(self) -> None:
+        if not hasattr(self, "more_btn"):
+            return
+        compact = self.width() < 900
+        show_editing_tools = bool(self.annotation_mode and not compact)
+        self.clear_btn.setVisible(show_editing_tools)
+        self.delete_btn.setVisible(show_editing_tools)
+        self.reset_view_btn.setVisible(not compact)
+        self.more_btn.setVisible(bool(self.annotation_mode and compact))
 
     def _initialize_state(self) -> None:
         self.images: list[str] = []
@@ -876,6 +898,7 @@ class AnnotationTool(QWidget):
             self.draw_annotations()
 
         btn = self.class_buttons.pop()
+        btn.hide()
         btn.deleteLater()
 
         if self.current_class >= len(self.class_buttons):
@@ -992,11 +1015,8 @@ class AnnotationTool(QWidget):
 
     def set_annotation_mode(self, enabled: bool) -> None:
         self.annotation_mode = enabled
-        self.clear_btn.setVisible(enabled)
-        self.delete_btn.setVisible(enabled)
         self.class_scroll_area.setVisible(enabled)
-        if hasattr(self, "more_btn"):
-            self.more_btn.setVisible(False)
+        self._update_toolbar_density()
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded if enabled else Qt.ScrollBarAlwaysOff)
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if enabled else Qt.ScrollBarAlwaysOff)
         if not enabled:
