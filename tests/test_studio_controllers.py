@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from PyQt5.QtWidgets import QApplication, QWidget
 
-from app.core import AnnotationState
+from app.core import AnnotationState, ScanResultRecord
 from app.ui.annotation_tool import AnnotationTool
 from app.windows.studio_window import ReSTOLOStudioApp
 from app.windows.runtime_controller import StudioRuntimeController
@@ -91,6 +91,10 @@ class DummyAnnotationTool:
 
 
 class DummyAnnotationService:
+    def create_state(self, image_paths: list[str], class_names: list[str] | None = None) -> AnnotationState:
+        names = list(class_names) if class_names else ["0"]
+        return AnnotationState(images=list(image_paths), class_names=names).normalized()
+
     def has_images(self, state) -> bool:
         return bool(state.images)
 
@@ -834,6 +838,32 @@ def test_studio_controller_uses_acquisition_workflow_for_scan_state():
     assert acquisition.append_scan_calls == [("session-1", {"label": "scan_a"})]
     assert acquisition.append_workflow_calls == [("session-1", {"pre_scan": {"label": "pre"}, "post_scan": {"label": "post"}})]
     assert logs[-2:] == ["扫描完成：scan_a", "流程完成：预扫 -> 脉冲 -> 后扫"]
+
+
+def test_studio_controller_shows_new_scan_preview_before_session_refresh(tmp_path: Path):
+    image_path = tmp_path / "scan.png"
+    image_path.write_bytes(
+        bytes.fromhex(
+            "89504E470D0A1A0A0000000D4948445200000001000000010802000000907753DE"
+            "0000000C49444154789C63F8FFFF3F0005FE02FEA7E5C9A00000000049454E44AE426082"
+        )
+    )
+    annotation_tool = DummyAnnotationTool(AnnotationState())
+    window = SimpleNamespace(
+        annotation_service=DummyAnnotationService(),
+        annotation_tool=annotation_tool,
+        current_session=SimpleNamespace(scan_results=[]),
+        update_button_states=lambda: None,
+    )
+    controller = StudioController(window)
+
+    controller._show_scan_result_in_workspace(
+        ScanResultRecord(label="scan_a", saved=[{"png": str(image_path)}])
+    )
+
+    loaded_state = annotation_tool.loaded_states[-1]
+    assert loaded_state.images == [str(image_path)]
+    assert loaded_state.current_index == 0
 
 
 def test_studio_controller_persists_acquisition_settings_to_config():

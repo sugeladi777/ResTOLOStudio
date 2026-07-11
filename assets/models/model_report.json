@@ -1,0 +1,31 @@
+{
+  "default_yolo_model": "best.pt",
+  "evaluation_yolo_model": "evaluation-best.pt",
+  "inference_settings": {
+    "conf_thres": 0.48848848848848847,
+    "iou_thres": 0.45
+  },
+  "evaluation_metrics": {
+    "strategy": "disjoint_group_split",
+    "train_images": 8,
+    "validation_images": 2,
+    "precision": 0.9128,
+    "recall": 0.9,
+    "f1": 0.9063548102383053,
+    "map50": 0.9371,
+    "map50_95": 0.4814,
+    "model_file": "evaluation-best.pt"
+  },
+  "deployment_training": {
+    "source_archive": "test_data.zip",
+    "source_archive_sha256": "316A02AFF309D927DA25B18E4FF0F79D9E50C18CBFBCDB3182A738051E80D5F0",
+    "training_images": 10,
+    "epochs": 168,
+    "image_size": 384,
+    "batch_size": 4,
+    "augmentation": false,
+    "device": "cuda:0",
+    "validation_policy": "overlap_monitoring_only_not_for_reported_metrics"
+  },
+  "default_resnet_model": "demo-resnet50.saving"
+}

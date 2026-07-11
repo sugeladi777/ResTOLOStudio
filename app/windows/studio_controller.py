@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import os
 import threading
+from pathlib import Path
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QPainter, QPixmap
 from PyQt5.QtWidgets import QApplication, QCheckBox, QFileDialog, QInputDialog, QMessageBox
 
 from app.core import ScanResultRecord, SessionRecord
-from app.windows.studio_ui import BASE_COLOR, BORDER_COLOR, PANEL_BG, TEXT_COLOR
+from app.windows.studio_ui import BASE_COLOR, BORDER_COLOR, DARK_BG, PANEL_BG, TEXT_COLOR
 
 
 class StudioController:
@@ -325,18 +326,46 @@ class StudioController:
             f"采集通道：{current_channels} vs {other_channels}"
         )
 
+    def _existing_scan_path(self, raw_path: object, result: ScanResultRecord | None = None) -> str | None:
+        if not raw_path:
+            return None
+
+        path = Path(str(raw_path))
+        candidates = [path]
+        if not path.is_absolute():
+            runtime = getattr(self.window, "runtime", None)
+            runtime_paths = getattr(runtime, "paths", None)
+            project_root = getattr(runtime_paths, "project_root", None)
+            sessions_root = getattr(runtime_paths, "sessions_root", None)
+            session = getattr(self.window, "current_session", None)
+            session_path = getattr(session, "path", "")
+
+            for base in (session_path, sessions_root, project_root):
+                if base:
+                    candidates.append(Path(base) / path)
+
+            raw = getattr(result, "raw", {}) or {}
+            manifest_path = raw.get("manifest_path")
+            if manifest_path:
+                candidates.append(Path(str(manifest_path)).parent / path)
+
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+        return None
+
     def _preview_path_from_result(self, result: ScanResultRecord | None) -> str | None:
         if result is None:
             return None
         candidates = []
         for item in getattr(result, "saved", []) or []:
-            for key in ("png", "jpg", "jpeg", "bmp", "sxm"):
-                path = item.get(key)
-                if path and os.path.exists(path):
+            for key in ("model_png", "png", "jpg", "jpeg", "bmp", "sxm"):
+                path = self._existing_scan_path(item.get(key), result)
+                if path:
                     candidates.append((item, path))
         for item, path in candidates:
-            npy_path = item.get("npy")
-            if npy_path and os.path.exists(npy_path):
+            npy_path = self._existing_scan_path(item.get("npy"), result)
+            if npy_path:
                 try:
                     import numpy as np
 
@@ -349,8 +378,8 @@ class StudioController:
             return path
         raw = getattr(result, "raw", {}) or {}
         for key in ("png", "jpg", "image", "image_path", "nanonis_file_path"):
-            path = raw.get(key)
-            if path and os.path.exists(path):
+            path = self._existing_scan_path(raw.get(key), result)
+            if path:
                 return path
         return None
 
@@ -714,8 +743,10 @@ class StudioController:
             return
         if not hasattr(annotation_service, "create_state"):
             return
-        preview_paths: list[str] = []
         selected_preview_path = self._preview_path_from_result(result)
+        preview_paths: list[str] = []
+        if selected_preview_path:
+            preview_paths.append(selected_preview_path)
         for item in getattr(session, "scan_results", []) or []:
             preview_path = self._preview_path_from_result(item)
             if preview_path and preview_path not in preview_paths:
@@ -934,6 +965,8 @@ class StudioController:
 
         hint = getattr(self.window, "classes_hint_label", None)
         if hint is not None:
+            hint.hide()
+            hint.setParent(None)
             hint.deleteLater()
             self.window.classes_hint_label = None
 
@@ -946,8 +979,13 @@ class StudioController:
                 f"""
                     QCheckBox {{
                         color: {TEXT_COLOR};
-                        spacing: 8px;
-                        background-color: transparent;
+                        spacing: 10px;
+                        background-color: {DARK_BG};
+                        border: 1px solid {BORDER_COLOR};
+                        border-radius: 6px;
+                        padding: 6px 10px;
+                        font-size: 16px;
+                        min-height: 30px;
                     }}
                     QCheckBox::indicator {{
                         width: 16px;
@@ -997,8 +1035,22 @@ class StudioController:
         self.window.update_button_states()
 
     def load_images(self) -> None:
-        files = self._choose_files("选择图像", "图像文件 (*.jpg *.jpeg *.png *.bmp *.sxm)")
+        files = self._choose_files("选择图像或数据包", "图像和数据包 (*.jpg *.jpeg *.png *.bmp *.sxm *.zip)")
         if not files:
+            return
+        if len(files) == 1 and files[0].lower().endswith(".zip"):
+            archive_result = self.window.dataset_service.extract_annotation_archive(files[0])
+            converted = self.convert_sxm_files(archive_result.image_paths)
+            state = self.window.annotation_tool.export_state()
+            state = self.window.annotation_service.load_annotation_files(state, archive_result.annotation_paths)
+            self.window.annotation_tool.load_state(state)
+            self.window.log(
+                f"已只读导入数据包：图像 {len(converted)} 张，标注 {len(archive_result.annotation_paths)} 份，"
+                f"未标注图像 {archive_result.unmatched_images} 张"
+            )
+            self.window.log(f"原始压缩包 SHA-256：{archive_result.source_hash}")
+            self._detect_and_display_classes()
+            self.window.update_button_states()
             return
         converted = self.convert_sxm_files(files)
         self._auto_restore_annotations_for_loaded_images(files, converted)

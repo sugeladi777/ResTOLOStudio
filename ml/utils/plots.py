@@ -54,18 +54,30 @@ def butter_lowpass_filtfilt(data, cutoff=1500, fs=50000, order=5):
     return filtfilt(b, a, data)  # forward-backward filter
 
 
-def plot_one_box(x, img, color=None, label=None, line_thickness=3):
+def plot_one_box(x, img, color=None, label=None, line_thickness=3, label_scale=None):
     # Plots one bounding box on image img
     tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
     c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
     cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
     if label:
-        tf = max(tl - 1, 1)  # font thickness
-        t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
-        c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
-        cv2.rectangle(img, c1, c2, color, -1, cv2.LINE_AA)  # filled
-        cv2.putText(img, label, (c1[0], c1[1] - 2), 0, tl / 3, [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA)
+        tf = 1 if label_scale is not None else max(tl - 1, 1)
+        font_scale = label_scale if label_scale is not None else tl / 3
+        t_size = cv2.getTextSize(label, 0, fontScale=font_scale, thickness=tf)[0]
+        label_x = min(max(c1[0], 0), max(0, img.shape[1] - t_size[0] - 1))
+        if c1[1] - t_size[1] - 3 >= 0:
+            background_start = (label_x, c1[1] - t_size[1] - 3)
+            background_end = (label_x + t_size[0], c1[1])
+            text_origin = (label_x, c1[1] - 2)
+        else:
+            background_start = (label_x, c1[1])
+            background_end = (label_x + t_size[0], c1[1] + t_size[1] + 3)
+            text_origin = (label_x, c1[1] + t_size[1] + 1)
+        cv2.rectangle(img, background_start, background_end, color, -1, cv2.LINE_AA)
+        cv2.putText(
+            img, label, text_origin, 0, font_scale,
+            [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA,
+        )
 
 
 def plot_one_box_PIL(box, img, color=None, label=None, line_thickness=None):

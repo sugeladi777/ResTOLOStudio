@@ -89,9 +89,20 @@ class InferenceManager(QObject):
             project=output_dir,
             name="inference",
             classes_yaml=classes_yaml,
+            cleanup_source=True,
         )
 
-    def _run_inference_directly(self, yolo_model, source, resnet_dir, resnet_name, project, name, classes_yaml=""):
+    def _run_inference_directly(
+        self,
+        yolo_model,
+        source,
+        resnet_dir,
+        resnet_name,
+        project,
+        name,
+        classes_yaml="",
+        cleanup_source=False,
+    ):
         def run():
             self.inference_logs = []
             self.actual_output_dir = None
@@ -127,7 +138,7 @@ class InferenceManager(QObject):
                                     self.progress_signal.emit(int(((current - 1) / total) * 100), 100)
                             except Exception:
                                 pass
-                        elif "/" in line and ",type:" in line:
+                        elif "/" in line and "type:" in line:
                             try:
                                 box_progress = line.split(" ", 1)[0]
                                 current_box, total_boxes = map(int, box_progress.split("/"))
@@ -151,6 +162,13 @@ class InferenceManager(QObject):
 
                 try:
                     device = "cuda:0" if torch.cuda.is_available() else "cpu"
+                    inference_settings = {}
+                    try:
+                        checkpoint = torch.load(yolo_model, map_location="cpu", weights_only=False)
+                        if isinstance(checkpoint, dict):
+                            inference_settings = dict(checkpoint.get("inference_settings", {}) or {})
+                    except Exception:  # noqa: BLE001
+                        inference_settings = {}
                     sys.argv = [
                         "ReSTolo_detect.py",
                         "--weights",
@@ -170,6 +188,10 @@ class InferenceManager(QObject):
                         "--device",
                         device,
                     ]
+                    if "conf_thres" in inference_settings:
+                        sys.argv.extend(["--conf-thres", str(inference_settings["conf_thres"])])
+                    if "iou_thres" in inference_settings:
+                        sys.argv.extend(["--iou-thres", str(inference_settings["iou_thres"])])
                     if classes_yaml and os.path.exists(classes_yaml):
                         sys.argv.extend(["--classes_yaml", classes_yaml])
 
@@ -197,6 +219,8 @@ class InferenceManager(QObject):
                 self._emit_error(f"错误: {exc}\n{traceback.format_exc()}")
                 return
             finally:
+                if cleanup_source:
+                    shutil.rmtree(source, ignore_errors=True)
                 self.finished_signal.emit()
 
         thread = threading.Thread(target=run, daemon=True)
@@ -210,7 +234,8 @@ class InferenceManager(QObject):
         parser.add_argument("--source", type=str, default="dataset/low_reso")
         parser.add_argument("--img-size", type=int, default=640)
         parser.add_argument("--conf-thres", type=float, default=0.25)
-        parser.add_argument("--iou-thres", type=float, default=0.11)
+        parser.add_argument("--iou-thres", type=float, default=0.45)
+        parser.add_argument("--class-conf-thres", type=float, default=0.5)
         parser.add_argument("--device", default=device)
         parser.add_argument("--view-img", action="store_true")
         parser.add_argument("--save-txt", action="store_true")

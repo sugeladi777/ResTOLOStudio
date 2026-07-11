@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
 from nanonis.ExperimentClient import NanonisExperimentClient
 
@@ -62,3 +63,10 @@ def test_experiment_client_scan_and_save_skips_empty_channel_results(tmp_path: P
 
     assert len(result["saved"]) == 1
     assert result["saved"][0]["channel_index"] == 0
+    saved = result["saved"][0]
+    assert Path(saved["preview_png"]).exists()
+    assert Path(saved["model_png"]).exists()
+    assert saved["png"] == saved["model_png"]
+    assert saved["preprocessing"]["colormap"] == "inferno"
+    with Image.open(saved["model_png"]) as image:
+        assert image.size == (4, 4)

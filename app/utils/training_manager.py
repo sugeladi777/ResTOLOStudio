@@ -70,6 +70,12 @@ class TrainingManager(QObject):
             project,
             "--name",
             name,
+            "--exist-ok",
+            "--no-augment",
+            "--patience",
+            "30",
+            "--workers",
+            "0",
         ]
         self._run_training(command)
 

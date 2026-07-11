@@ -108,13 +108,32 @@ class StudioRuntimeController:
             parts.append("检测模型已就绪")
         if self._has_resnet_model():
             parts.append("分类模型已就绪")
+        try:
+            import torch
+
+            device_text = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU（CUDA 当前不可用）"
+            parts.append(f"训练设备：{device_text}")
+        except Exception:  # noqa: BLE001
+            pass
         return "，".join(parts) if parts else "模型尚未加载；如已配置默认权重，启动后会自动填入路径。"
 
-    def _training_dataset_status_text(self, image_count: int, annotation_count: int) -> str:
+    def _training_dataset_status_text(self, image_count: int, annotation_count: int, annotations=None) -> str:
         train_data_path = getattr(self.window, "train_resnet_data_path", None)
         has_resnet_data = bool(train_data_path and train_data_path.text().strip())
         if image_count and annotation_count:
-            return f"训练数据已就绪：{image_count} 张图像，{annotation_count} 个标注。"
+            counts: dict[int, int] = {}
+            for boxes in (annotations or {}).values():
+                for box in boxes:
+                    try:
+                        class_index = int(box.cls if hasattr(box, "cls") else box[0])
+                    except (TypeError, ValueError, IndexError):
+                        continue
+                    counts[class_index] = counts.get(class_index, 0) + 1
+            warning = ""
+            scarce = [str(index) for index, count in counts.items() if count < 2]
+            if scarce:
+                warning = f"；类别 {', '.join(scarce)} 仅有单样本，不能独立验证"
+            return f"训练数据已就绪：{image_count} 张图像，{annotation_count} 个标注，类别统计 {dict(sorted(counts.items()))}{warning}。"
         if has_resnet_data:
             return "已加载外部分类型数据。"
         if image_count:
@@ -156,7 +175,10 @@ class StudioRuntimeController:
         model_text = self._model_status_text()
         self._set_label_text("training_model_status_detail", model_text)
         self._set_label_text("inference_model_status_detail", model_text)
-        self._set_label_text("training_dataset_status_detail", self._training_dataset_status_text(len(images), annotation_count))
+        self._set_label_text(
+            "training_dataset_status_detail",
+            self._training_dataset_status_text(len(images), annotation_count, annotations),
+        )
         self._set_label_text("training_run_status_detail", self._training_run_status_text())
         self._set_label_text("inference_result_status_detail", self._inference_result_status_text())
 

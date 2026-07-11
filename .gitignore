@@ -11,6 +11,9 @@ build/
 dist/
 *.egg-info/
 sessions/
+nanonis/session/
+test_data/
+test_data.zip
 artifacts/
 ml/runs/
 scene/

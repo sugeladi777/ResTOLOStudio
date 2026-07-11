@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import os
-import random
+import re
 import shutil
+import tempfile
+import zipfile
 from dataclasses import dataclass
+from hashlib import sha256
+from pathlib import Path, PurePosixPath
 
 from app.core import AnnotationState
 from PIL import Image
+
+from ml.molecule_preprocessing import crop_normalized_box
 
 
 @dataclass
@@ -23,6 +29,15 @@ class ResnetCropSummary:
     skipped_missing_class: int = 0
     skipped_invalid_box: int = 0
     skipped_image_error: int = 0
+
+
+@dataclass
+class ArchiveDatasetResult:
+    image_paths: list[str]
+    annotation_paths: list[str]
+    workspace: str
+    source_hash: str
+    unmatched_images: int
 
 
 class DatasetService:
@@ -42,6 +57,60 @@ class DatasetService:
             class_names=list(getattr(annotation_source, "class_names", [])),
             current_index=int(getattr(annotation_source, "current_index", 0)),
         ).normalized()
+
+    def extract_annotation_archive(self, archive_path: str) -> ArchiveDatasetResult:
+        source = Path(archive_path)
+        source_hash = sha256(source.read_bytes()).hexdigest()
+        workspace = Path(tempfile.mkdtemp(prefix="restolo_dataset_"))
+        images_dir = workspace / "images"
+        labels_dir = workspace / "labels"
+        images_dir.mkdir(parents=True)
+        labels_dir.mkdir(parents=True)
+
+        with zipfile.ZipFile(source) as archive:
+            members = [name for name in archive.namelist() if not name.endswith("/")]
+            label_members = {
+                PurePosixPath(name).stem: name
+                for name in members
+                if PurePosixPath(name).suffix.lower() == ".txt"
+            }
+            image_members = [
+                name
+                for name in members
+                if PurePosixPath(name).suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp"}
+            ]
+
+            def image_sort_key(name: str):
+                stem = PurePosixPath(name).stem
+                numbers = tuple(int(value) for value in re.findall(r"\d+", stem))
+                return (0 if stem in label_members else 1, numbers, stem)
+
+            image_members.sort(key=image_sort_key)
+
+            image_paths: list[str] = []
+            annotation_paths: list[str] = []
+            for index, member in enumerate(image_members):
+                extension = PurePosixPath(member).suffix.lower()
+                ascii_stem = f"image_{index:04d}"
+                image_path = images_dir / f"{ascii_stem}{extension}"
+                image_path.write_bytes(archive.read(member))
+                image_paths.append(str(image_path))
+
+                label_member = label_members.get(PurePosixPath(member).stem)
+                if label_member:
+                    label_path = labels_dir / f"{ascii_stem}.txt"
+                    label_path.write_bytes(archive.read(label_member))
+                    annotation_paths.append(str(label_path))
+
+        if source_hash != sha256(source.read_bytes()).hexdigest():
+            raise RuntimeError("数据压缩包在读取期间发生变化")
+        return ArchiveDatasetResult(
+            image_paths=image_paths,
+            annotation_paths=annotation_paths,
+            workspace=str(workspace),
+            source_hash=source_hash,
+            unmatched_images=len(image_paths) - len(annotation_paths),
+        )
 
     def annotation_class_summary(self, annotation_source) -> AnnotationClassSummary:
         state = self._state(annotation_source)
@@ -128,9 +197,15 @@ class DatasetService:
         return min(max(int(optimal_size), 320), 1280)
 
     def split_yolo_images(self, annotated_images: list[str]) -> tuple[list[str], list[str]]:
-        shuffled_images = annotated_images.copy()
-        random.shuffle(shuffled_images)
-        return shuffled_images, shuffled_images
+        images = sorted(dict.fromkeys(annotated_images))
+        if len(images) <= 1:
+            return images, images
+
+        import random
+
+        random.Random(20260711).shuffle(images)
+        val_count = min(len(images) - 1, max(1, round(len(images) * 0.2)))
+        return images[val_count:], images[:val_count]
 
     def write_yolo_split(
         self,
@@ -188,7 +263,7 @@ class DatasetService:
         skipped_missing_class = 0
         skipped_invalid_box = 0
         skipped_image_error = 0
-        for image_path in state.images:
+        for image_index, image_path in enumerate(state.images):
             annotations = state.annotations.get(image_path)
             if not annotations:
                 continue
@@ -201,21 +276,19 @@ class DatasetService:
                         if cls not in selected_class_map:
                             skipped_missing_class += 1
                             continue
-                        x1 = max(0, int((x - w / 2) * width))
-                        y1 = max(0, int((y - h / 2) * height))
-                        x2 = min(width, int((x + w / 2) * width))
-                        y2 = min(height, int((y + h / 2) * height))
-                        if x2 <= x1 or y2 <= y1:
+                        if w <= 0 or h <= 0:
                             skipped_invalid_box += 1
                             continue
-                        crop = img.crop((x1, y1, x2, y2))
-                        if crop.mode not in ("RGB", "L"):
-                            crop = crop.convert("RGB")
+                        crop = crop_normalized_box(img, x, y, w, h)
                         class_name = str(selected_class_map[cls])
                         actual_classes.add(class_name)
                         class_counts[class_name] = class_counts.get(class_name, 0) + 1
                         class_crop_index = class_counts[class_name] - 1
-                        crop_path = os.path.join(output_dir, class_name, f"crop_{class_crop_index}.jpg")
+                        crop_path = os.path.join(
+                            output_dir,
+                            class_name,
+                            f"crop_source_{image_index:04d}_crop_{class_crop_index:05d}.jpg",
+                        )
                         crop.save(crop_path)
                         crop_count += 1
             except Exception:  # noqa: BLE001

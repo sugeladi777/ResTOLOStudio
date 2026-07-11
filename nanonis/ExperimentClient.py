@@ -9,6 +9,7 @@ from contextlib import contextmanager
 import zlib
 
 import numpy as np
+from PIL import Image
 
 try:
     import matplotlib
@@ -16,6 +17,7 @@ try:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 except ImportError:
+    matplotlib = None
     plt = None
 
 from nanonis import nanonisTCP
@@ -367,7 +369,14 @@ class NanonisExperimentClient:
                     "base_path": str(base_path),
                     "npy": str(base_path.with_suffix(".npy")),
                     "csv": str(base_path.with_suffix(".csv")),
-                    "png": str(base_path.with_suffix(".png")),
+                    "png": str(base_path.with_name(base_path.name + "_model.png")),
+                    "preview_png": str(base_path.with_suffix(".png")),
+                    "model_png": str(base_path.with_name(base_path.name + "_model.png")),
+                    "preprocessing": {
+                        "normalization": "percentile_1_99",
+                        "colormap": "inferno",
+                        "geometry": "raw_pixels",
+                    },
                 }
             )
 
@@ -419,6 +428,7 @@ class NanonisExperimentClient:
             _write_matplotlib_png(png_path, data, channel_name)
         else:
             write_grayscale_png(png_path, data)
+        write_model_png(base.with_name(base.name + "_model.png"), data)
         return base
 
     def save_scan_manifest(self, result):
@@ -486,3 +496,23 @@ def write_grayscale_png(path, data):
         + chunk(b"IEND", b"")
     )
     path.write_bytes(png)
+
+
+def write_model_png(path, data):
+    finite_data = np.asarray(data, dtype=float)
+    finite_data = np.nan_to_num(finite_data, nan=0.0, posinf=0.0, neginf=0.0)
+    low, high = np.percentile(finite_data, [1, 99])
+    if high <= low:
+        low = float(finite_data.min())
+        high = float(finite_data.max())
+    if high > low:
+        normalized = np.clip((finite_data - low) / (high - low), 0, 1)
+    else:
+        normalized = np.zeros_like(finite_data)
+    normalized = np.flipud(normalized)
+
+    if matplotlib is not None:
+        colored = matplotlib.colormaps["inferno"](normalized, bytes=True)[..., :3]
+        Image.fromarray(colored, mode="RGB").save(path)
+    else:
+        Image.fromarray((normalized * 255).astype(np.uint8), mode="L").convert("RGB").save(path)

@@ -20,6 +20,8 @@ class YoloTrainingPlan:
     annotated_images: list[str]
     img_size: int
     class_names: list[str]
+    train_images: list[str]
+    val_images: list[str]
 
 
 @dataclass
@@ -92,6 +94,8 @@ class TrainingWorkflowService:
             log("仅有一张已标注图像，将同时用于训练和验证")
         else:
             log(f"已标注图像：{total_annotated}，训练 {len(train_images)}，验证 {len(val_images)}")
+            if set(train_images) & set(val_images):
+                raise ValueError("YOLO 训练集与验证集不能包含相同图像")
 
         train_images_dir = os.path.join(temp_dir, "images", "train")
         val_images_dir = os.path.join(temp_dir, "images", "val")
@@ -125,13 +129,23 @@ class TrainingWorkflowService:
             data_yaml_path,
         )
         log(f"已生成数据配置：{data_yaml_path}")
-        log(f"类别数量：{len(class_names)}")
+        log(f"检测任务统一为单类别 object；原始分类统计：{self._annotation_class_counts(state)}")
         return YoloTrainingPlan(
             data_yaml_path=data_yaml_path,
             annotated_images=annotated_images,
             img_size=img_size,
             class_names=class_names,
+            train_images=train_images,
+            val_images=val_images,
         )
+
+    def _annotation_class_counts(self, state: AnnotationState) -> dict[int, int]:
+        counts: dict[int, int] = {}
+        for boxes in state.annotations.values():
+            for box in boxes:
+                class_index = int(box.cls if hasattr(box, "cls") else box[0])
+                counts[class_index] = counts.get(class_index, 0) + 1
+        return dict(sorted(counts.items()))
 
     def prepare_resnet_training(
         self,
@@ -308,7 +322,9 @@ class TrainingWorkflowService:
         os.makedirs(train_dir, exist_ok=True)
         os.makedirs(val_dir, exist_ok=True)
 
-        rng = random.Random(20260630)
+        class_files: dict[str, list[str]] = {}
+        group_class_counts: dict[str, dict[str, int]] = {}
+        class_totals: dict[str, int] = {}
         for class_name in sorted(os.listdir(crop_dir)):
             class_dir = os.path.join(crop_dir, class_name)
             if not os.path.isdir(class_dir):
@@ -318,28 +334,48 @@ class TrainingWorkflowService:
                 for name in sorted(os.listdir(class_dir))
                 if os.path.isfile(os.path.join(class_dir, name))
             ]
-            rng.shuffle(images)
-            duplicate_singleton = len(images) == 1
-            if len(images) <= 1:
-                val_names = images
-            else:
-                val_count = max(1, int(round(len(images) * 0.2)))
-                val_count = min(val_count, len(images) - 1)
-                val_names = images[:val_count]
-            val_set = set(val_names)
+            class_files[class_name] = images
+            class_totals[class_name] = len(images)
+            for image_name in images:
+                group_name = image_name.split("_crop_", 1)[0]
+                group_counts = group_class_counts.setdefault(group_name, {})
+                group_counts[class_name] = group_counts.get(class_name, 0) + 1
+
+        groups = sorted(group_class_counts)
+        required_train_groups = {
+            group_name
+            for group_name, counts in group_class_counts.items()
+            if any(class_totals[class_name] <= count for class_name, count in counts.items())
+        }
+        candidates = [group for group in reversed(groups) if group not in required_train_groups]
+        target_val_groups = min(len(groups) - 1, max(1, round(len(groups) * 0.2))) if len(groups) > 1 else 0
+        val_groups: set[str] = set()
+        remaining_counts = dict(class_totals)
+        for group_name in candidates:
+            if len(val_groups) >= target_val_groups:
+                break
+            group_counts = group_class_counts[group_name]
+            if any(remaining_counts[class_name] - count <= 0 for class_name, count in group_counts.items()):
+                continue
+            val_groups.add(group_name)
+            for class_name, count in group_counts.items():
+                remaining_counts[class_name] -= count
+
+        for class_name, images in class_files.items():
+            class_dir = os.path.join(crop_dir, class_name)
             for split_dir in (train_dir, val_dir):
                 os.makedirs(os.path.join(split_dir, class_name), exist_ok=True)
             for image_name in images:
                 source = os.path.join(class_dir, image_name)
-                if duplicate_singleton:
-                    shutil.copy2(source, os.path.join(train_dir, class_name, image_name))
-                    shutil.copy2(source, os.path.join(val_dir, class_name, image_name))
-                    continue
-                target_root = val_dir if image_name in val_set else train_dir
+                group_name = image_name.split("_crop_", 1)[0]
+                target_root = val_dir if group_name in val_groups else train_dir
                 shutil.copy2(source, os.path.join(target_root, class_name, image_name))
             if not images:
                 log(f"类别 {class_name} 没有裁剪样本，已保留空目录")
 
+        log(f"分类数据按原始图像分组：训练组 {len(groups) - len(val_groups)}，验证组 {len(val_groups)}")
+        if required_train_groups:
+            log(f"单样本类别所在图像仅用于训练：{sorted(required_train_groups)}")
         log(f"分类训练集目录：{train_dir}")
         log(f"分类验证集目录：{val_dir}")
         return train_dir, val_dir

@@ -1,7 +1,6 @@
 import argparse
 import time
 from pathlib import Path
-import copy as cp
 import cv2
 import torch
 import torch.backends.cudnn as cudnn
@@ -19,10 +18,14 @@ from utils.general import check_img_size, check_requirements, check_imshow, non_
 from utils.plots import plot_one_box
 from utils.torch_utils import select_device, load_classifier, time_synchronized
 
+try:
+    from ml.molecule_preprocessing import crop_xyxy_array, image_to_tensor
+except ImportError:  # Direct execution from the ml directory.
+    from molecule_preprocessing import crop_xyxy_array, image_to_tensor
+
 #我自己的哲学代码
 from tools.zeigen import class_name_getter
 import gc
-print(torch.cuda.device_count())
 
 
 def _saved_class_id(predicted_index, predicted_class_name, class_indices=None):
@@ -52,12 +55,6 @@ def detect(save_img=False):
     set_logging()
     device = select_device(opt.device)
     half = device.type != 'cpu'  # half precision only supported on CUDA
-    
-    #定义全局常量         
-    #调整像素大小为150像素，这个值源于STM图片
-    magnification_ratio=opt.mag #显微镜放大率，以ppt为准，测试集相对于训练集的放大倍数
-    box_size=150*magnification_ratio #org:150
-    target_size=(224,224)
     
     # Load model
     model = attempt_load(weights, map_location=device)  # load FP32 model
@@ -92,10 +89,10 @@ def detect(save_img=False):
             state_dict = resnet_weights
     
     # 检查权重文件中的键，判断是哪种ResNet模型
-    if 'layer3.6.conv1.weight' in state_dict:
+    if 'layer3.22.conv1.weight' in state_dict:
         # ResNet-101
         print("检测到ResNet-101权重，使用ResNet-101模型")
-        resnet_model = models.resnet101(pretrained=True)
+        resnet_model = models.resnet101(weights=None)
     elif 'layer3.5.conv1.weight' in state_dict:
         # 检查conv1的形状来判断是ResNet-50还是ResNet-34
         conv1_weight = state_dict.get('layer3.5.conv1.weight')
@@ -103,19 +100,19 @@ def detect(save_img=False):
             if conv1_weight.shape[2] == 1 and conv1_weight.shape[3] == 1:
                 # Bottleneck (1x1 conv) - ResNet-50
                 print("检测到ResNet-50权重，使用ResNet-50模型")
-                resnet_model = models.resnet50(pretrained=True)
+                resnet_model = models.resnet50(weights=None)
             else:
                 # BasicBlock (3x3 conv) - ResNet-34
                 print("检测到ResNet-34权重，使用ResNet-34模型")
-                resnet_model = models.resnet34(pretrained=True)
+                resnet_model = models.resnet34(weights=None)
         else:
             # 默认使用ResNet-50
             print("无法检测模型类型，默认使用ResNet-50模型")
-            resnet_model = models.resnet50(pretrained=True)
+            resnet_model = models.resnet50(weights=None)
     elif 'layer3.1.conv1.weight' in state_dict:
         # ResNet-18
         print("检测到ResNet-18权重，使用ResNet-18模型")
-        resnet_model = models.resnet18(pretrained=True)
+        resnet_model = models.resnet18(weights=None)
     else:
         # 尝试通过其他层的权重形状来判断
         if 'layer1.0.conv1.weight' in state_dict:
@@ -124,30 +121,30 @@ def detect(save_img=False):
                 # BasicBlock (3x3 conv) - ResNet-18 or ResNet-34
                 if 'layer3.5.conv1.weight' in state_dict:
                     print("检测到ResNet-34权重，使用ResNet-34模型")
-                    resnet_model = models.resnet34(pretrained=True)
+                    resnet_model = models.resnet34(weights=None)
                 else:
                     print("检测到ResNet-18权重，使用ResNet-18模型")
-                    resnet_model = models.resnet18(pretrained=True)
+                    resnet_model = models.resnet18(weights=None)
             else:
                 # Bottleneck (1x1 conv) - ResNet-50 or ResNet-101
-                if 'layer3.6.conv1.weight' in state_dict:
+                if 'layer3.22.conv1.weight' in state_dict:
                     print("检测到ResNet-101权重，使用ResNet-101模型")
-                    resnet_model = models.resnet101(pretrained=True)
+                    resnet_model = models.resnet101(weights=None)
                 else:
                     print("检测到ResNet-50权重，使用ResNet-50模型")
-                    resnet_model = models.resnet50(pretrained=True)
+                    resnet_model = models.resnet50(weights=None)
         else:
             # 默认使用ResNet-50
             print("无法检测模型类型，默认使用ResNet-50模型")
-            resnet_model = models.resnet50(pretrained=True)
+            resnet_model = models.resnet50(weights=None)
     
     # 从权重中获取类别数量（用于自适应）
     weight_class_num = state_dict['fc.weight'].shape[0] if 'fc.weight' in state_dict else 10
     
     # 尝试加载类别信息 YAML 文件
     import os
-    class_type = []
-    class_indices = []
+    class_type = [str(name) for name in resnet_weights.get('class_names', [])]
+    class_indices = [int(index) for index in resnet_weights.get('class_indices', [])]
     class_num = 0
     use_yaml = opt.classes_yaml and os.path.exists(opt.classes_yaml)
     
@@ -169,13 +166,21 @@ def detect(save_img=False):
             print(f"加载类别信息文件失败: {e}")
             use_yaml = False
     
-    if not use_yaml:
+    if not use_yaml and class_type:
+        class_num = len(class_type)
+        print(f"从 ResNet 检查点加载类别信息: {class_type}")
+    elif not use_yaml:
         # 没有YAML文件，从权重中自动识别类别数
         class_num = weight_class_num
         class_type = [str(i) for i in range(class_num)]
         print(f"从 ResNet 模型自动识别类别数: {class_num}")
         print(f"类别名称: {class_type}")
     
+    if class_num != weight_class_num:
+        raise ValueError(f"类别数量不匹配：ResNet 输出 {weight_class_num} 类，类别信息包含 {class_num} 类")
+    if class_indices and len(class_indices) != class_num:
+        raise ValueError("ResNet 检查点中的 class_indices 与类别数量不一致")
+
     # 设置模型输出层并加载权重
     num_ftrs = resnet_model.fc.in_features
     resnet_model.fc = torch.nn.Linear(num_ftrs, class_num)
@@ -244,12 +249,9 @@ def detect(save_img=False):
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
             
-            #免得其他框有影响
-            im1=cp.deepcopy(im0) 
-            im_grand=np.zeros((3*im1.shape[0],3*im1.shape[1],im1.shape[2]))
-            im_grand[im1.shape[0]:2*im1.shape[0],im1.shape[1]:2*im1.shape[1],:]=im1
-            #转换颜色信道，发文章用
-            im0=cv2.cvtColor(im1, cv2.COLOR_BGR2RGB)
+            # Convert OpenCV BGR input once; plotting, PIL saving and classification all use RGB.
+            im0=cv2.cvtColor(im0, cv2.COLOR_BGR2RGB)
+            classification_image = im0.copy()
             Chiffres=np.zeros(class_num) #存储各个图片的种类
             
             if len(det):
@@ -273,130 +275,46 @@ def detect(save_img=False):
                     # 计算框级进度
                     box_progress = (img_idx + (index / total_boxes)) / dataset_size * 100
                     
-                    # 延迟保存到txt文件，等到ResNet分类后再保存正确的类别
-                    # 保存临时数据，稍后用ResNet分类结果更新
-                    det_info = {
-                        'xyxy': xyxy,
-                        'conf': conf,
-                        'gn': gn,
-                        'save_conf': opt.save_conf,
-                        'txt_path': txt_path
-                    }
+                    if save_img or view_img or save_txt:
+                        crop = crop_xyxy_array(classification_image, xyxy)
+                        crop_tensor = image_to_tensor(crop).unsqueeze(0).to(device)
+                        with torch.no_grad():
+                            probabilities = torch.softmax(resnet_model(crop_tensor), dim=1)
+                        class_confidence, predicted = probabilities.max(dim=1)
+                        predicted_index = int(predicted.item())
+                        predicted_class_name = str(class_type[predicted_index])
+                        class_confidence = float(class_confidence.item())
+                        detection_confidence = float(conf.item())
+                        is_confident = class_confidence >= opt.class_conf_thres
+                        display_name = predicted_class_name if is_confident else "UNK"
+                        label = f"{display_name} D{detection_confidence:.2f} C{class_confidence:.2f}"
+                        Chiffres[predicted_index] += 1
 
-                    if save_img or view_img:  # Add bbox to image
-                        
-                        torch.set_grad_enabled(True)
-                        xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                        line = (cls, *xywh, conf) if opt.save_conf else (cls, *xywh)  # label format
-                        
-                        #print(xywh)方框化
-                        x,y,w,h=float(line[1]),float(line[2]),float(line[3]),float(line[4])
-                        ratio=np.sqrt(w*h)
-                        w=ratio
-                        h=ratio
-                        
-                        #魔改
-                        #必要的常量，以及计算xmin,ymin,xmax,ymax  
-                        x_zentrum=x*im0.shape[1]
-                        y_zentrum=y*im0.shape[0]
-                        breite=w*im0.shape[1]
-                        hoehe=h*im0.shape[0]
-                        xmin=int(x_zentrum-breite/2)
-                        ymin=int(y_zentrum-hoehe/2)
-                        xmax=int(x_zentrum+breite/2)
-                        ymax=int(y_zentrum+hoehe/2)
-                        xyxy=np.array([xmin,ymin,xmax,ymax])
-                        
-                        #采用补0法,从大图截取，二值化图片，统计偏移量
-                        subplot=im_grand[ymin+im1.shape[0]:ymax+im1.shape[0],xmin+im1.shape[1]:xmax+im1.shape[1],:]
-                        subplot=subplot.astype(np.float32)
-                        
-                        #优化偏移过程
-                        Breite=subplot.shape[0]
-                        Hohe=subplot.shape[1]
-                        
-                        delta_Y=np.average(np.arange(subplot.shape[0]),
-                                   weights =np.sum(subplot**2,axis=(1,2)))-Breite/2
-                        delta_X=np.average(np.arange(subplot.shape[1]),
-                                   weights =np.sum(subplot**2,axis=(0,2)))-Hohe/2
-                        x_zentrum=x_zentrum+delta_X#调整截图的中心
-                        y_zentrum=y_zentrum+delta_Y
-                        
-                        
-                        #周期性边界条件，从大图重新截取
-                        ymin_neu=int(y_zentrum-box_size/2)
-                        ymax_neu=int(y_zentrum+box_size/2)
-                        xmin_neu=int(x_zentrum-box_size/2)
-                        xmax_neu=int(x_zentrum+box_size/2)
-                        subplot=im_grand[ymin_neu+im1.shape[0]:ymax_neu+im1.shape[0],xmin_neu+im1.shape[1]:xmax_neu+im1.shape[1],:]
-                        
-                        #判断，避免边界框和鬼框，首先开始推断检测框是否符合要求
-                        qinglong=(x_zentrum-box_size/4>=0)
-                        baihu=(x_zentrum+box_size/4<=im1.shape[1])
-                        zhuque=(y_zentrum-box_size/4>=0)
-                        xuanwu=(y_zentrum+box_size/4<=im1.shape[0])
-                        if box_size**0.0002/3<=Breite*Hohe<=box_size**20000*3 and qinglong and baihu and zhuque and xuanwu:
-                            #背底扣除模块--------------------------------------------------
-                            #最大值减去，背底扣除
-                            #建议大津法扣除背底平均值！#快速扣除背景平均值
-                            #此时读入图片是BGR的
-                            subplot=cv2.cvtColor(subplot.astype(np.uint8), cv2.COLOR_BGR2RGB)
-                            img_gray=cv2.cvtColor (subplot.astype(np.uint8), cv2.COLOR_BGR2GRAY)
-                            retVal, a_img = cv2.threshold(img_gray, 0, 255, cv2.THRESH_OTSU)
-                            a_img=np.array([a_img,a_img,a_img]).astype(np.float64).transpose((1,2,0))
-                            subplot=subplot.astype(np.float64)
-                            twee_HE=np.sum((255-a_img)/255)/3 #每一张具体的颜色比如R里面有多少背底像素
-                            (255-a_img)/255*subplot #背底彩色,背底都为各自的颜色信道 x*y*c， 3D
-                            SUM=np.sum((255-a_img)/255*subplot,axis=(0,1),keepdims=True)
-                            Finalemente=np.clip(subplot-SUM/twee_HE,0,255)
-                            subplot=cv2.resize(np.uint8(Finalemente),target_size,interpolation=cv2.INTER_CUBIC) #变成标准大小
-                            subplot=torch.tensor(subplot)
-                            subplot=subplot.to(torch.float32).to(device)
-                            subplot=subplot.permute((2,0,1))
-                            #------------------------------------------------------------
-                            #----------------------CNN模块---------
-                            #规范化
-                            subplot=(subplot-127.5)/127.5
-                            subplot=subplot.unsqueeze(0)
-                            #print(subplot.shape)
-                            #raise ValueError
-                            #计算结果
-                            resultat1=resnet_model(subplot)
-                            #print(resultat1)
-                            #raise ValueError
-                            
-                            #判断
-                            max_values1,max_indices1=torch.max(resultat1,dim=1,keepdim=True)
-                            resultat1=resultat1-max_values1
-                            s1 = torch.exp(resultat1)+1.e-21 #防止爆炸
-                            resultat1 = s1 / torch.sum(s1, dim=1, keepdim=True)
-                            
-                            #计算
-                            max_values,max_indices=torch.max(resultat1,dim=1,keepdim=True)
-                            predicted_index = int(max_indices.item())
-                            predicted_class_name = str(class_type[predicted_index])
-                            label=predicted_class_name
-                            _=', p=%.3f'%max_values#+',x='+str(x)
-                            label+=_
-                            Chiffres[predicted_index]+=1
-                            
-                            # 输出
-                            print(f"{index}/{total_boxes} ,type:{predicted_class_name} {_}")
-                            
-                            #label = f'{names[int(cls)]} {conf:.2f}' #int(cls)
-                            plot_one_box(xyxy, im0, label=label, color=colors[predicted_index], line_thickness=3)
-                            
-                            # 保存到txt文件（使用ResNet分类后的类别）
-                            if save_txt:
-                                xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                                # 使用ResNet分类后的类别（max_indices）
-                                saved_class_id = _saved_class_id(predicted_index, predicted_class_name, class_indices)
-                                line = (saved_class_id, *xywh, float(max_values)) if opt.save_conf else (saved_class_id, *xywh)
-                                with open(txt_path + '.txt', 'a') as f:
-                                    f.write(('%g ' * len(line)).rstrip() % line + '\n')
-                            #--------------------------------------------
-                        else:
-                            pass
+                        print(
+                            f"{index}/{total_boxes} type:{display_name} "
+                            f"d={detection_confidence:.3f} c={class_confidence:.3f}"
+                        )
+                        image_extent = max(im0.shape[:2])
+                        plot_one_box(
+                            xyxy,
+                            im0,
+                            label=label,
+                            color=colors[predicted_index],
+                            line_thickness=max(1, round(image_extent / 512)),
+                            label_scale=max(0.35, min(0.55, image_extent / 1600)),
+                        )
+
+                        if save_txt:
+                            xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()
+                            saved_class_id = _saved_class_id(predicted_index, predicted_class_name, class_indices)
+                            line = (
+                                saved_class_id,
+                                *xywh,
+                                detection_confidence,
+                                class_confidence,
+                            ) if opt.save_conf else (saved_class_id, *xywh)
+                            with open(txt_path + '.txt', 'a') as f:
+                                f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
             # Print time (inference + NMS), print class
             t3 = time_synchronized()
@@ -465,7 +383,8 @@ if __name__ == '__main__':#20240416_purged1/JPEGImages_train uint8
     parser.add_argument('--source', type=str, default='dataset/low_reso', help='source')  # file/folder, 0 for webcam
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.25, help='object confidence threshold') #0.25
-    parser.add_argument('--iou-thres', type=float, default=0.11, help='IOU threshold for NMS') #0.45 0.11
+    parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
+    parser.add_argument('--class-conf-thres', type=float, default=0.5, help='classification confidence threshold')
     parser.add_argument('--device', default='cuda:0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--view-img', action='store_true', help='display results')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')

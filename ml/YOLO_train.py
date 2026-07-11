@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import random
+import sys
 import time
 from copy import deepcopy
 from pathlib import Path
@@ -21,16 +22,10 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-try:
-    import YOLO_test as test  # import test.py to get mAP after each epoch
-except ImportError:  # pragma: no cover - fallback for trimmed local distributions
-    class _FallbackTestModule:
-        @staticmethod
-        def test(*args, **kwargs):
-            logger.warning("YOLO_test.py is not available; validation metrics will be reported as zeros.")
-            return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0), np.zeros(1), (0.0, 0.0, 0.0)
-
-    test = _FallbackTestModule()
+ML_ROOT = Path(__file__).resolve().parent
+if str(ML_ROOT) not in sys.path:
+    sys.path.insert(0, str(ML_ROOT))
+import YOLO_test as test
 from models.experimental import attempt_load
 from models.yolo import Model
 from utils.autoanchor import check_anchors
@@ -196,7 +191,7 @@ def train(hyp, opt, device, tb_writer=None):
 
     # Trainloader
     dataloader, dataset = create_dataloader(train_path, imgsz, batch_size, gs, opt,
-                                            hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=rank,
+                                            hyp=hyp, augment=not opt.no_augment, cache=opt.cache_images, rect=opt.rect, rank=rank,
                                             world_size=opt.world_size, workers=opt.workers,
                                             image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '))
     mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
@@ -244,8 +239,8 @@ def train(hyp, opt, device, tb_writer=None):
 
     # Start training
     t0 = time.time()
-    nw = max(round(hyp['warmup_epochs'] * nb), 1000)  # number of warmup iterations, max(3 epochs, 1k iterations)
-    # nw = min(nw, (epochs - start_epoch) / 2 * nb)  # limit warmup to < 1/2 of training
+    total_steps = max(1, (epochs - start_epoch) * nb)
+    nw = min(max(1, round(hyp['warmup_epochs'] * nb)), max(1, round(total_steps * 0.1)))
     maps = np.zeros(nc)  # mAP per class
     results = (0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls)
     scheduler.last_epoch = start_epoch - 1  # do not move
@@ -255,17 +250,9 @@ def train(hyp, opt, device, tb_writer=None):
                 f'Using {dataloader.num_workers} dataloader workers\n'
                 f'Logging results to {save_dir}\n'
                 f'Starting training for {epochs} epochs...')
+    epochs_without_improvement = 0
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
-        #to avoid the accidental breakups of Internect Connection or Server Reboost
-        if epoch%10==1:
-            os.makedirs('runs', exist_ok=True)
-            torch.save(model.state_dict(), 'runs/temporary_yolov5m.pt')
-            print("Model saved successfully at epoch"+str(epoch))
-        else:
-            pass
-        #torch.save(model.state_dict(), 'models/'+str(epoch)+'yolov5m.pt')
-        #models/yolov5m.pt
 
         # Update image weights (optional)
         if opt.image_weights:
@@ -400,10 +387,14 @@ def train(hyp, opt, device, tb_writer=None):
                     wandb_logger.log({tag: x})  # W&B
 
             # Update best mAP
-            fi = fitness(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
-            if fi > best_fitness:
+            fi = float(fitness(np.array(results).reshape(1, -1)).item())
+            improved = fi > float(best_fitness)
+            if improved:
                 best_fitness = fi
-            wandb_logger.end_epoch(best_result=best_fitness == fi)
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+            wandb_logger.end_epoch(best_result=improved)
 
             # Save model
             if (not opt.nosave) or (final_epoch and not opt.evolve):  # if save
@@ -414,17 +405,31 @@ def train(hyp, opt, device, tb_writer=None):
                         'ema': deepcopy(ema.ema).half(),
                         'updates': ema.updates,
                         'optimizer': optimizer.state_dict(),
+                        'inference_settings': {
+                            'conf_thres': float(getattr(test, 'last_best_confidence', 0.25)),
+                            'iou_thres': 0.45,
+                        },
+                        'training_metadata': {
+                            'device': str(device),
+                            'augmentation': not opt.no_augment,
+                            'warmup_steps': nw,
+                            'patience': opt.patience,
+                        },
                         'wandb_id': wandb_logger.wandb_run.id if wandb_logger.wandb else None}
 
                 # Save last, best and delete
                 torch.save(ckpt, last)
-                if best_fitness == fi:
+                if improved:
                     torch.save(ckpt, best)
                 if wandb_logger.wandb:
                     if ((epoch + 1) % opt.save_period == 0 and not final_epoch) and opt.save_period != -1:
                         wandb_logger.log_model(
                             last.parent, opt, epoch, fi, best_model=best_fitness == fi)
                 del ckpt
+
+            if opt.patience > 0 and epochs_without_improvement >= opt.patience:
+                logger.info(f'Early stopping after {epoch + 1} epochs; no fitness improvement for {opt.patience} epochs.')
+                break
 
         # end epoch ----------------------------------------------------------------------------------------------------
     # end training
@@ -481,6 +486,8 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
     parser.add_argument('--img-size', nargs='+', type=int, default=[640, 640], help='[train, test] image sizes')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
+    parser.add_argument('--no-augment', action='store_true', help='disable all training-time image augmentation')
+    parser.add_argument('--patience', type=int, default=30, help='epochs to wait for validation fitness improvement')
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
     parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
     parser.add_argument('--notest', action='store_true', help='only test final epoch')

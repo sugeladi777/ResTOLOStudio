@@ -56,15 +56,15 @@ class TrainingRunnerService:
         callbacks: ResnetTrainingCallbacks,
     ) -> None:
         callbacks.log("开始训练分类模型")
-        resnet_module = importlib.import_module("ml.ResNet_train")
+        resnet_module = importlib.import_module("ml.resnet_finetune")
         parser = _ResnetLogParser(callbacks, epochs)
         custom_stream = _CustomStream(parser.handle_line)
         original_stdout = sys.stdout
         original_argv = sys.argv.copy()
         sys.stdout = custom_stream
         try:
-            callbacks.log(f"类别不平衡处理：{'开启' if enable_imbalance else '关闭'}")
-            callbacks.log(f"Data augmentation: {'enabled' if enable_augment else 'disabled'}")
+            callbacks.log("类别不平衡处理：开启（加权交叉熵，不复制样本）")
+            callbacks.log("Data augmentation: disabled")
             sys.argv = [
                 "ResNet_train.py",
                 "--training_path",
@@ -79,10 +79,8 @@ class TrainingRunnerService:
                 str(batch_size),
                 "--pretrained_model",
                 pretrained_model_path,
-                "--imbalance",
-                str(enable_imbalance),
-                "--augment",
-                str(enable_augment),
+                "--patience",
+                "30",
             ]
             resnet_module.main()
         finally:

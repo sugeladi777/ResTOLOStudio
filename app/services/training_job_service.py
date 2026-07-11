@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 
 from app.core import TrainingResultRecord
@@ -31,6 +32,7 @@ class TrainingJobService:
             "yolo_model_path": yolo_model_path,
             "resnet_model_path": resnet_model_path,
             "classes_yaml_path": classes_yaml_path,
+            "training_metadata": self.load_training_metadata(output_dir),
         }
         return TrainingResultRecord(
             mode=payload["mode"],
@@ -68,6 +70,12 @@ class TrainingJobService:
     def find_resnet_model(self, output_dir: str) -> str:
         if not output_dir or not os.path.isdir(output_dir):
             return ""
+        exact_final = Path(output_dir) / "Model_final.saving"
+        if exact_final.exists():
+            return str(exact_final)
+        exact_best = Path(output_dir) / "Model_best.saving"
+        if exact_best.exists():
+            return str(exact_best)
         patterns = ("Model_best_*.saving", "Model_*.saving", "*.saving", "*.pt", "*.pth")
         for pattern in patterns:
             matches = sorted(
@@ -78,6 +86,33 @@ class TrainingJobService:
             if matches:
                 return str(matches[0])
         return ""
+
+    def load_training_metadata(self, output_dir: str) -> dict:
+        if not output_dir:
+            return {}
+        report_path = Path(output_dir) / "training_report.json"
+        if report_path.exists():
+            try:
+                return json.loads(report_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return {}
+        results_path = Path(output_dir) / "results.txt"
+        if results_path.exists():
+            lines = [line.strip() for line in results_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            if lines:
+                values = lines[-1].split()
+                if len(values) >= 15:
+                    try:
+                        metrics = [float(value) for value in values[-7:]]
+                        return {
+                            "precision": metrics[0],
+                            "recall": metrics[1],
+                            "map50": metrics[2],
+                            "map50_95": metrics[3],
+                        }
+                    except ValueError:
+                        pass
+        return {}
 
     def find_classes_yaml(self, context: dict, output_dir: str) -> str:
         candidates: list[Path] = []

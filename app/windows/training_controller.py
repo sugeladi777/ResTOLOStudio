@@ -173,7 +173,15 @@ class StudioTrainingController:
             return
 
         epochs, batch_size = self._yolo_training_parameters()
-        device = "0"
+        try:
+            import torch
+
+            device = "0" if torch.cuda.is_available() else "cpu"
+            device_name = torch.cuda.get_device_name(0) if device == "0" else "CPU"
+        except Exception:  # noqa: BLE001
+            device = "cpu"
+            device_name = "CPU"
+        self.window.log(f"训练设备：{device_name}")
         state, gray_path_resolver, _ = self._annotation_training_source()
 
         project_dir = self._choose_training_project_dir()
@@ -279,7 +287,11 @@ class StudioTrainingController:
         self.window._resnet_project_dir = project_dir
         self._prepare_training_context("resnet", project_dir)
         annotation_source, gray_path_resolver, using_saved_state = self._annotation_training_source()
-        selected_class_indices = [] if using_saved_state else self._selected_class_indices()
+        selected_class_indices = self.window.dataset_service.selected_class_indices(
+            annotation_source,
+            [] if using_saved_state else getattr(self.window, "class_checkboxes", []),
+            [] if using_saved_state else getattr(self.window, "class_indices", []),
+        )
         class_names = self._class_names_for_indices(annotation_source, selected_class_indices) if selected_class_indices else []
         plan = self.window.training_workflow_service.prepare_resnet_training(
             annotation_source,

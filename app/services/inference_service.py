@@ -21,7 +21,7 @@ class InferenceService:
             payload = scan_result
         files = []
         for item in payload.get("saved", []):
-            for key in ("png", "jpg", "jpeg", "bmp", "sxm"):
+            for key in ("model_png", "png", "jpg", "jpeg", "bmp", "sxm"):
                 file_path = item.get(key)
                 if file_path:
                     files.append(str(Path(file_path)))
